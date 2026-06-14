@@ -12,6 +12,11 @@ private let cartesiaLanguage = "en"
 private let cartesiaKeyDefaultsKey = "voi.cartesiaKey"
 private let recordedNotesDefaultsKey = "voi.recordedNotes"
 
+private enum PasteResult {
+    case pasted
+    case copiedNeedsAccessibility
+}
+
 private func fourCharCode(_ value: String) -> OSType {
     value.utf8.reduce(0) { result, character in
         (result << 8) + OSType(character)
@@ -562,9 +567,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                 let text = try await transcribeAndPolish(fileURL: recordingURL)
                 await MainActor.run {
                     saveRecordedNote(text)
-                    paste(text)
-                    setStatus("Pasted")
-                    shortcutLabel?.stringValue = "Pasted. Hold Option-Space for another note."
+                    switch paste(text) {
+                    case .pasted:
+                        setStatus("Pasted")
+                        shortcutLabel?.stringValue = "Pasted. Hold Option-Space for another note."
+                    case .copiedNeedsAccessibility:
+                        setStatus("Copied")
+                        shortcutLabel?.stringValue = "Copied to clipboard. Enable Auto-Paste to insert automatically."
+                    }
                 }
                 try? await Task.sleep(for: .milliseconds(1200))
                 await MainActor.run { setStatus("Voi ready") }
@@ -623,9 +633,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         return body
     }
 
-    private func paste(_ text: String) {
+    private func paste(_ text: String) -> PasteResult {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+
+        guard AXIsProcessTrusted() else {
+            refreshPermissionStatus(eventTapActive: eventTap != nil)
+            return .copiedNeedsAccessibility
+        }
 
         if let targetApplication {
             targetApplication.activate(options: [.activateAllWindows])
@@ -641,6 +656,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             keyDown?.post(tap: .cghidEventTap)
             keyUp?.post(tap: .cghidEventTap)
         }
+        return .pasted
     }
 
     private func setStatus(_ message: String) {
@@ -654,6 +670,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     @objc private func setCartesiaKey() {
         showSetupWindow()
+    }
+
+    @objc private func enableAutoPaste() {
+        let prompt = "AXTrustedCheckOptionPrompt"
+        let granted = AXIsProcessTrustedWithOptions([prompt: true] as CFDictionary)
+        refreshPermissionStatus(eventTapActive: eventTap != nil)
+        if granted {
+            setStatus("Auto-Paste enabled")
+            shortcutLabel?.stringValue = "Auto-Paste is enabled."
+        } else {
+            setStatus("Enable Auto-Paste")
+            shortcutLabel?.stringValue = "Grant Accessibility in System Settings, then try Test Paste."
+        }
     }
 
     @objc private func useClipboardAsCartesiaKey() {
@@ -726,23 +755,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.addSubview(accessibility)
         accessibilityChip = accessibility
 
-        let inputEvents = makeChip(frame: NSRect(x: 366, y: 478, width: 166, height: 28))
+        let inputEvents = makeChip(frame: NSRect(x: 366, y: 478, width: 150, height: 28))
         content.addSubview(inputEvents)
         inputChip = inputEvents
 
         let hideButton = makeButton(
             title: "Hide",
-            frame: NSRect(x: 544, y: 476, width: 86, height: 32),
+            frame: NSRect(x: 650, y: 476, width: 82, height: 32),
             action: #selector(hideSetupWindow)
         )
         content.addSubview(hideButton)
 
         let testButton = makeButton(
             title: "Test Paste",
-            frame: NSRect(x: 640, y: 476, width: 92, height: 32),
+            frame: NSRect(x: 526, y: 476, width: 112, height: 32),
             action: #selector(testPaste)
         )
         content.addSubview(testButton)
+
+        let autoPasteButton = makeButton(
+            title: "Enable Auto-Paste",
+            frame: NSRect(x: 526, y: 438, width: 206, height: 30),
+            action: #selector(enableAutoPaste),
+            accent: !AXIsProcessTrusted()
+        )
+        content.addSubview(autoPasteButton)
 
         let label = monoLabel("Cartesia API key", size: 11, weight: .semibold, color: primaryTextColor)
         label.frame = NSRect(x: 28, y: 438, width: 190, height: 20)
@@ -883,8 +920,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         updateChip(micChip, title: micStatus, state: micState)
         updateChip(
             accessibilityChip,
-            title: isAccessible ? "Accessibility: allowed" : "Accessibility: optional",
-            state: isAccessible ? .success : .neutral
+            title: isAccessible ? "Auto-Paste: on" : "Auto-Paste: off",
+            state: isAccessible ? .success : .warning
         )
         updateChip(
             inputChip,
@@ -950,7 +987,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 
     @objc private func testPaste() {
-        paste("Voi is ready.")
+        switch paste("Voi is ready.") {
+        case .pasted:
+            setStatus("Pasted")
+            shortcutLabel?.stringValue = "Test pasted into the active app."
+        case .copiedNeedsAccessibility:
+            setStatus("Copied")
+            shortcutLabel?.stringValue = "Test copied. Enable Auto-Paste to insert automatically."
+        }
     }
 
     private func loadRecordedNotes() -> [RecordedNote] {
