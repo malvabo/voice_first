@@ -1,0 +1,90 @@
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  width: 320px;
+  background: #0a0b14;
+  color: #e8e8ed;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 20px;
+}
+
+p,
+label,
+small {
+  color: #9aa0b4;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+input {
+  background: #10121d;
+  border: 1px solid #24263a;
+  border-radius: 10px;
+  color: #e8e8ed;
+  font-size: 14px;
+  outline: none;
+  padding: 10px 12px;
+}
+
+button {
+  background: #f6b93b;
+  border: 0;
+  border-radius: 10px;
+  color: #1a1300;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 10px 12px;
+}
+
+.logo {
+  align-items: center;
+  display: flex;
+  gap: 3px;
+  height: 24px;
+}
+
+.logo span {
+  background: #f6b93b;
+  border-radius: 2px;
+  display: block;
+  width: 3px;
+}
+
+.logo span:nth-child(1),
+.logo span:nth-child(5) {
+  height: 8px;
+}
+
+.logo span:nth-child(2),
+.logo span:nth-child(4) {
+  height: 16px;
+}
+
+.logo span:nth-child(3) {
+  height: 22px;
+}

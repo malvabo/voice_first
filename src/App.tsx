@@ -6,7 +6,7 @@ import {
   useState,
   type CSSProperties,
 } from 'react'
-import { transcribeWithGroq } from './lib/groqTranscribe'
+import { polishDictation, transcribeWithCartesia } from './lib/cartesiaTranscribe'
 
 // ---------------------------------------------------------------------------
 // Types & storage
@@ -15,12 +15,13 @@ import { transcribeWithGroq } from './lib/groqTranscribe'
 interface Entry {
   id: string
   text: string
+  rawText?: string
   durationMs: number
   createdAt: number
 }
 
 const ENTRIES_KEY = 'voi-entries'
-const GROQ_KEY = 'voi-groq-key'
+const CARTESIA_KEY = 'voi-cartesia-key'
 
 function loadEntries(): Entry[] {
   try {
@@ -37,8 +38,8 @@ function saveEntries(entries: Entry[]) {
   localStorage.setItem(ENTRIES_KEY, JSON.stringify(entries))
 }
 
-function loadGroqKey(): string {
-  return localStorage.getItem(GROQ_KEY) ?? ''
+function loadCartesiaKey(): string {
+  return localStorage.getItem(CARTESIA_KEY) ?? ''
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +84,62 @@ function VoiLogo() {
       </svg>
       <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em' }}>
         Voi
+      </span>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// DictationSurface
+// ---------------------------------------------------------------------------
+
+function DictationSurface({
+  latest,
+  copied,
+  onCopy,
+  onStart,
+}: {
+  latest: Entry | null
+  copied: boolean
+  onCopy: () => void
+  onStart: () => void
+}) {
+  return (
+    <div style={dictationShell}>
+      <div style={statusPill}>
+        <span style={tinyDot} />
+        Ready across your Mac
+      </div>
+
+      <div style={composer}>
+        <textarea
+          readOnly
+          value={
+            latest?.text ??
+            'Say it naturally. Voi removes pauses, fixes changed thoughts, and formats the final text.'
+          }
+          style={{
+            ...composerText,
+            color: latest ? '#f3f4f8' : '#6b7186',
+          }}
+        />
+        <div style={composerFooter}>
+          <span style={{ color: '#6b7186', fontSize: 13 }}>
+            {latest
+              ? `${formatTimer(latest.durationMs)} clipped to clipboard`
+              : 'Try: Let’s meet at 2, actually 3.'}
+          </span>
+          <button style={toolbarButton} onClick={onCopy} disabled={!latest}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+      </div>
+
+      <button style={flowMicButton} aria-label="Start dictation" onClick={onStart}>
+        <MicIcon />
+      </button>
+      <span style={{ color: '#9aa0b4', fontSize: 15 }}>
+        Click to speak
       </span>
     </div>
   )
@@ -175,9 +232,12 @@ function RecordingOverlay({
       <div style={bottomSheet}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={pulsingDot} />
-          <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 22, fontWeight: 600 }}>
-            {formatTimer(elapsedMs)}
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{ color: '#9aa0b4', fontSize: 13 }}>Listening</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 22, fontWeight: 600 }}>
+              {formatTimer(elapsedMs)}
+            </span>
+          </div>
         </div>
         <AmberWave analyser={analyser} />
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
@@ -185,7 +245,7 @@ function RecordingOverlay({
             Cancel
           </button>
           <button style={amberButton} onClick={onDone}>
-            Done
+            Polish
           </button>
         </div>
       </div>
@@ -210,7 +270,7 @@ function TranscribingOverlay() {
       >
         <span style={spinner} />
         <span style={{ letterSpacing: '0.18em', fontSize: 13, color: 'var(--amber)' }}>
-          TRANSCRIBING
+          POLISHING
         </span>
       </div>
     </div>
@@ -236,12 +296,12 @@ function SettingsModal({
     <div style={overlayBackdrop} onClick={onClose}>
       <div style={modalCard} onClick={(e) => e.stopPropagation()}>
         <h2 style={{ margin: 0, fontSize: 18 }}>Settings</h2>
-        <label style={{ fontSize: 13, color: '#9aa0b4' }}>Groq API key</label>
+        <label style={{ fontSize: 13, color: '#9aa0b4' }}>Cartesia API key</label>
         <input
           type="password"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="gsk_..."
+          placeholder="sk_car_..."
           style={textInput}
           autoFocus
         />
@@ -352,12 +412,13 @@ type RecorderState = 'idle' | 'recording' | 'transcribing'
 export default function App() {
   const [entries, setEntries] = useState<Entry[]>(() => loadEntries())
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [groqKey, setGroqKey] = useState<string>(() => loadGroqKey())
+  const [cartesiaKey, setCartesiaKey] = useState<string>(() => loadCartesiaKey())
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [recorderState, setRecorderState] = useState<RecorderState>('idle')
   const [elapsedMs, setElapsedMs] = useState(0)
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [copiedLatest, setCopiedLatest] = useState(false)
 
   const streamRef = useRef<MediaStream | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
@@ -376,6 +437,19 @@ export default function App() {
     [entries, selectedId],
   )
 
+  const latest = entries[0] ?? null
+
+  const copyLatest = useCallback(async () => {
+    if (!latest) return
+    try {
+      await navigator.clipboard.writeText(latest.text)
+      setCopiedLatest(true)
+      setTimeout(() => setCopiedLatest(false), 1500)
+    } catch {
+      setError('Clipboard access is unavailable in this browser.')
+    }
+  }, [latest])
+
   const teardown = useCallback(() => {
     if (timerRef.current !== null) {
       clearInterval(timerRef.current)
@@ -392,7 +466,7 @@ export default function App() {
   }, [])
 
   const startRecording = useCallback(async () => {
-    if (!groqKey) {
+    if (!cartesiaKey) {
       setSettingsOpen(true)
       return
     }
@@ -430,7 +504,7 @@ export default function App() {
       setRecorderState('idle')
       setError('Could not access the microphone.')
     }
-  }, [groqKey, teardown])
+  }, [cartesiaKey, teardown])
 
   const stopRecording = useCallback(() => {
     const recorder = recorderRef.current
@@ -455,15 +529,24 @@ export default function App() {
       const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
       setRecorderState('transcribing')
       try {
-        const text = await transcribeWithGroq(blob, groqKey)
+        const rawText = await transcribeWithCartesia(blob, cartesiaKey)
+        const text = polishDictation(rawText)
         const entry: Entry = {
           id: crypto.randomUUID(),
           text,
+          rawText,
           durationMs,
           createdAt: Date.now(),
         }
         setEntries((prev) => [entry, ...prev])
-        setSelectedId(entry.id)
+        setSelectedId(null)
+        try {
+          await navigator.clipboard.writeText(text)
+          setCopiedLatest(true)
+          setTimeout(() => setCopiedLatest(false), 1500)
+        } catch {
+          // Clipboard is a convenience; keep the transcript even if copy fails.
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Transcription failed.')
       } finally {
@@ -476,7 +559,7 @@ export default function App() {
       timerRef.current = null
     }
     recorder.stop()
-  }, [groqKey])
+  }, [cartesiaKey])
 
   const cancelRecording = useCallback(() => {
     cancelledRef.current = true
@@ -521,13 +604,13 @@ export default function App() {
         </div>
 
         <button style={{ ...amberButton, width: '100%' }} onClick={startRecording}>
-          New recording
+          Start dictation
         </button>
 
         <div style={entryList}>
           {entries.length === 0 ? (
             <div style={{ color: '#5a6078', fontSize: 13, padding: '8px 4px' }}>
-              No recordings yet.
+              No dictations yet.
             </div>
           ) : (
             entries.map((entry) => (
@@ -561,16 +644,12 @@ export default function App() {
             onDelete={() => deleteEntry(selected.id)}
           />
         ) : (
-          <div style={emptyState}>
-            <button
-              style={micButton}
-              aria-label="Start recording"
-              onClick={startRecording}
-            >
-              <MicIcon />
-            </button>
-            <span style={{ color: '#9aa0b4', fontSize: 15 }}>Click to speak</span>
-          </div>
+          <DictationSurface
+            latest={latest}
+            copied={copiedLatest}
+            onCopy={copyLatest}
+            onStart={startRecording}
+          />
         )}
       </main>
 
@@ -586,11 +665,11 @@ export default function App() {
 
       {settingsOpen && (
         <SettingsModal
-          initialKey={groqKey}
+          initialKey={cartesiaKey}
           onClose={() => setSettingsOpen(false)}
           onSave={(key) => {
-            setGroqKey(key)
-            localStorage.setItem(GROQ_KEY, key)
+            setCartesiaKey(key)
+            localStorage.setItem(CARTESIA_KEY, key)
             setSettingsOpen(false)
           }}
         />
@@ -719,18 +798,74 @@ const iconButton: CSSProperties = {
   borderRadius: 8,
 }
 
-const emptyState: CSSProperties = {
+const dictationShell: CSSProperties = {
   height: '100%',
   display: 'flex',
   flexDirection: 'column',
   alignItems: 'center',
   justifyContent: 'center',
-  gap: 22,
+  gap: 18,
+  padding: 32,
 }
 
-const micButton: CSSProperties = {
-  width: 80,
-  height: 80,
+const statusPill: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  background: '#121420',
+  border: '1px solid #23263a',
+  borderRadius: 999,
+  padding: '7px 12px',
+  color: '#b9bfd0',
+  fontSize: 13,
+  boxShadow: '0 10px 40px rgba(0,0,0,0.18)',
+}
+
+const tinyDot: CSSProperties = {
+  width: 7,
+  height: 7,
+  borderRadius: '50%',
+  background: '#71d38a',
+}
+
+const composer: CSSProperties = {
+  width: 'min(760px, 100%)',
+  minHeight: 260,
+  background: '#10121d',
+  border: '1px solid #24263a',
+  borderRadius: 18,
+  display: 'flex',
+  flexDirection: 'column',
+  boxShadow: '0 28px 90px rgba(0,0,0,0.28)',
+  overflow: 'hidden',
+}
+
+const composerText: CSSProperties = {
+  flex: 1,
+  width: '100%',
+  minHeight: 210,
+  background: 'transparent',
+  border: 'none',
+  color: '#f3f4f8',
+  resize: 'none',
+  outline: 'none',
+  padding: 24,
+  fontSize: 22,
+  lineHeight: 1.45,
+}
+
+const composerFooter: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 16,
+  borderTop: '1px solid #202235',
+  padding: '12px 14px 12px 18px',
+}
+
+const flowMicButton: CSSProperties = {
+  width: 78,
+  height: 78,
   borderRadius: '50%',
   background: 'var(--amber)',
   border: 'none',
