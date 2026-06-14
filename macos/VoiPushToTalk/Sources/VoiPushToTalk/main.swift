@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import ApplicationServices
+import Carbon
 import CoreImage
 import Foundation
 
@@ -10,6 +11,12 @@ private let cartesiaModel = "ink-whisper"
 private let cartesiaLanguage = "en"
 private let cartesiaKeyDefaultsKey = "voi.cartesiaKey"
 private let recordedNotesDefaultsKey = "voi.recordedNotes"
+
+private func fourCharCode(_ value: String) -> OSType {
+    value.utf8.reduce(0) { result, character in
+        (result << 8) + OSType(character)
+    }
+}
 
 struct RecordedNote: Codable {
     let id: UUID
@@ -81,6 +88,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private var targetApplication: NSRunningApplication?
     private var eventTap: CFMachPort?
     private var eventTapSource: CFRunLoopSource?
+    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyHandler: EventHandlerRef?
     private var setupWindow: NSWindow?
     private var keyField: NSTextField?
     private var statusLabel: NSTextField?
@@ -91,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private var micChip: NSTextField?
     private var accessibilityChip: NSTextField?
     private var inputChip: NSTextField?
+    private var hotKeyDiagnosticsLabel: NSTextField?
     private var shortcutLabel: NSTextField?
     private var eventLogTextView: NSTextView?
     private var eventLogScrollView: NSScrollView?
@@ -99,13 +109,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private var notes: [RecordedNote] = []
     private var hasRequestedMicrophoneThisSession = false
     private var diagnosticsExpanded = false
+    private var hotKeyDiagnosticsMessage = "Shortcut status pending."
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         notes = loadRecordedNotes()
         makeApplicationMenu()
         makeMenu()
-        installKeyMonitors()
+        installPushToTalkHotKey()
         setStatus("Voi ready")
         showSetupWindow()
     }
@@ -116,6 +127,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         }
         if let eventTap {
             CFMachPortInvalidate(eventTap)
+        }
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
+        }
+        if let hotKeyHandler {
+            RemoveEventHandler(hotKeyHandler)
         }
     }
 
@@ -250,6 +267,95 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         chip?.layer?.backgroundColor = state.backgroundColor.cgColor
     }
 
+    private func installPushToTalkHotKey() {
+        let eventTypes = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
+        ]
+        let userInfo = Unmanaged.passUnretained(self).toOpaque()
+        let handlerStatus = InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, event, userInfo in
+                guard let event, let userInfo else { return noErr }
+                var hotKeyID = EventHotKeyID()
+                let status = GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &hotKeyID
+                )
+                guard status == noErr, hotKeyID.id == 1 else { return noErr }
+
+                let app = Unmanaged<AppDelegate>.fromOpaque(userInfo).takeUnretainedValue()
+                let eventKind = GetEventKind(event)
+                Task { @MainActor in
+                    if eventKind == UInt32(kEventHotKeyPressed) {
+                        app.logHotKeyEvent("pressed")
+                        app.handlePushToTalkKeyChange(true)
+                    } else if eventKind == UInt32(kEventHotKeyReleased) {
+                        app.logHotKeyEvent("released")
+                        app.handlePushToTalkKeyChange(false)
+                    }
+                }
+                return noErr
+            },
+            eventTypes.count,
+            eventTypes,
+            userInfo,
+            &hotKeyHandler
+        )
+
+        guard handlerStatus == noErr else {
+            setStatus("Shortcut unavailable")
+            updateHotKeyDiagnostics("Hotkey handler failed: \(handlerStatus)")
+            return
+        }
+
+        let hotKeyID = EventHotKeyID(signature: fourCharCode("Voi1"), id: 1)
+        let registerStatus = RegisterEventHotKey(
+            UInt32(kVK_Space),
+            UInt32(optionKey),
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &hotKeyRef
+        )
+
+        if registerStatus == noErr {
+            updateHotKeyDiagnostics("Shortcut registered: Option-Space")
+        } else {
+            setStatus("Shortcut unavailable")
+            updateHotKeyDiagnostics(hotKeyFailureMessage(registerStatus))
+        }
+    }
+
+    private func updateHotKeyDiagnostics(_ message: String) {
+        hotKeyDiagnosticsMessage = message
+        shortcutLabel?.stringValue = message
+        hotKeyDiagnosticsLabel?.stringValue = message
+        recentEvents.insert(message, at: 0)
+        recentEvents = Array(recentEvents.prefix(20))
+        refreshEventLog()
+    }
+
+    private func hotKeyFailureMessage(_ status: OSStatus) -> String {
+        if status == OSStatus(eventHotKeyExistsErr) {
+            return "Shortcut conflict: Option-Space is already registered by another app."
+        }
+        return "Shortcut registration failed: \(status)"
+    }
+
+    private func logHotKeyEvent(_ phase: String) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        recentEvents.insert("\(formatter.string(from: Date())) hotKey option+space \(phase)", at: 0)
+        recentEvents = Array(recentEvents.prefix(20))
+        refreshEventLog()
+    }
+
     private func installKeyMonitors() {
         let mask =
             (1 << CGEventType.flagsChanged.rawValue) |
@@ -260,18 +366,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
-            options: .defaultTap,
+            options: .listenOnly,
             eventsOfInterest: CGEventMask(mask),
             callback: { _, type, event, userInfo in
                 guard let userInfo else { return Unmanaged.passUnretained(event) }
                 let app = Unmanaged<AppDelegate>.fromOpaque(userInfo).takeUnretainedValue()
                 let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
                 let isFunctionDown = event.flags.contains(.maskSecondaryFn)
-                let isOptionSpace = keyCode == 49 && event.flags.contains(.maskAlternate)
-                let shouldConsumeOptionSpace = keyCode == 49 && (
-                    (type == .keyDown && event.flags.contains(.maskAlternate)) ||
-                    type == .keyUp
-                )
                 Task { @MainActor in
                     app.logKeyEvent(type: type, keyCode: keyCode, flags: event.flags)
                     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
@@ -282,16 +383,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                     switch type {
                     case .flagsChanged:
                         app.handleFunctionFlagChange(isFunctionDown)
-                    case .keyDown:
-                        if isOptionSpace { app.handlePushToTalkKeyChange(true) }
-                    case .keyUp:
-                        if keyCode == 49 { app.handlePushToTalkKeyChange(false) }
                     default:
                         break
                     }
-                }
-                if shouldConsumeOptionSpace {
-                    return nil
                 }
                 return Unmanaged.passUnretained(event)
             },
@@ -325,34 +419,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     fileprivate func handleFunctionFlagChange(_ isFunctionDown: Bool) {
         if isFunctionDown && !functionKeyDown {
-            functionKeyDown = true
             shortcutLabel?.stringValue = "fn/Globe detected. Recording..."
-            startRecording()
+            functionKeyDown = startRecording()
         } else if !isFunctionDown && functionKeyDown {
             functionKeyDown = false
-            shortcutLabel?.stringValue = "fn/Globe released. Polishing..."
             stopRecording()
         }
     }
 
     fileprivate func handlePushToTalkKeyChange(_ isDown: Bool) {
         if isDown && !pushToTalkKeyDown {
-            pushToTalkKeyDown = true
             shortcutLabel?.stringValue = "Option-Space detected. Recording..."
-            startRecording()
+            pushToTalkKeyDown = startRecording()
         } else if !isDown && pushToTalkKeyDown {
             pushToTalkKeyDown = false
-            shortcutLabel?.stringValue = "Option-Space released. Polishing..."
             stopRecording()
         }
     }
 
-    private func startRecording() {
-        guard recorder == nil else { return }
+    @discardableResult
+    private func startRecording() -> Bool {
+        guard recorder == nil else { return true }
         guard UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty == false else {
             setStatus("Add Cartesia key")
+            shortcutLabel?.stringValue = "Add your Cartesia key before recording."
             showSetupWindow()
-            return
+            return false
         }
 
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -360,21 +452,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             break
         case .notDetermined:
             requestMicrophoneAccessOnce()
-            return
+            return false
         case .denied, .restricted:
             setStatus("Microphone blocked")
             shortcutLabel?.stringValue = "MICROPHONE_BLOCKED / ENABLE_IN_SYSTEM_SETTINGS"
             showSetupWindow()
             refreshPermissionStatus(eventTapActive: eventTap != nil)
-            return
+            return false
         @unknown default:
             setStatus("Microphone unknown")
-            return
+            shortcutLabel?.stringValue = "Microphone permission state is unknown."
+            return false
         }
 
-        let frontmost = NSWorkspace.shared.frontmostApplication
-        if frontmost?.bundleIdentifier != Bundle.main.bundleIdentifier {
-            targetApplication = frontmost
+        targetApplication = currentPasteTarget()
+        if targetApplication == nil {
+            shortcutLabel?.stringValue = "No target app captured. Click a text field, then hold Option-Space."
         }
 
         let url = FileManager.default.temporaryDirectory
@@ -394,17 +487,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             nextRecorder.delegate = self
             guard nextRecorder.record() else {
                 setStatus("Mic permission needed")
+                shortcutLabel?.stringValue = "Microphone did not start recording."
                 recorder = nil
                 recordingURL = nil
-                return
+                return false
             }
             recorder = nextRecorder
             setStatus("Listening")
+            shortcutLabel?.stringValue = "Listening. Release Option-Space to paste."
+            return true
         } catch {
             setStatus("Mic failed")
+            shortcutLabel?.stringValue = "Microphone failed: \(error.localizedDescription)"
             recorder = nil
             recordingURL = nil
+            return false
         }
+    }
+
+    private func currentPasteTarget() -> NSRunningApplication? {
+        guard let frontmost = NSWorkspace.shared.frontmostApplication,
+              frontmost.bundleIdentifier != Bundle.main.bundleIdentifier else {
+            return nil
+        }
+        return frontmost
     }
 
     private func requestMicrophoneAccessOnce() {
@@ -434,29 +540,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 
     private func stopRecording() {
-        guard let recorder else { return }
+        guard let recorder else {
+            shortcutLabel?.stringValue = "No active recording to transcribe."
+            setStatus("Voi ready")
+            return
+        }
         recorder.stop()
         self.recorder = nil
         setStatus("Polishing")
+        shortcutLabel?.stringValue = "Option-Space released. Polishing..."
 
         guard let recordingURL else {
             setStatus("Voi ready")
+            shortcutLabel?.stringValue = "Recording file was not created."
             return
         }
 
         Task {
+            defer { try? FileManager.default.removeItem(at: recordingURL) }
             do {
                 let text = try await transcribeAndPolish(fileURL: recordingURL)
                 await MainActor.run {
                     saveRecordedNote(text)
                     paste(text)
                     setStatus("Pasted")
+                    shortcutLabel?.stringValue = "Pasted. Hold Option-Space for another note."
                 }
-                try? FileManager.default.removeItem(at: recordingURL)
                 try? await Task.sleep(for: .milliseconds(1200))
                 await MainActor.run { setStatus("Voi ready") }
             } catch {
-                await MainActor.run { setStatus(error.localizedDescription) }
+                await MainActor.run {
+                    setStatus(error.localizedDescription)
+                    shortcutLabel?.stringValue = "Transcription failed: \(error.localizedDescription)"
+                }
             }
         }
     }
@@ -676,7 +792,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.addSubview(shortcut)
         shortcutLabel = shortcut
 
-        let eventScrollView = NSScrollView(frame: NSRect(x: 28, y: 18, width: 704, height: 74))
+        let hotKeyDiagnostics = monoLabel(hotKeyDiagnosticsMessage, size: 10, weight: .regular, color: mutedTextColor)
+        hotKeyDiagnostics.frame = NSRect(x: 210, y: 88, width: 522, height: 18)
+        content.addSubview(hotKeyDiagnostics)
+        hotKeyDiagnosticsLabel = hotKeyDiagnostics
+
+        let eventScrollView = NSScrollView(frame: NSRect(x: 28, y: 18, width: 704, height: 62))
 
         let eventTextView = NSTextView(frame: eventScrollView.bounds)
         styleScrollView(eventScrollView, textView: eventTextView, mono: true)
@@ -762,13 +883,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         updateChip(micChip, title: micStatus, state: micState)
         updateChip(
             accessibilityChip,
-            title: isAccessible ? "Accessibility: allowed" : "Accessibility: needed",
-            state: isAccessible ? .success : .warning
+            title: isAccessible ? "Accessibility: allowed" : "Accessibility: optional",
+            state: isAccessible ? .success : .neutral
         )
         updateChip(
             inputChip,
-            title: eventTapActive ? "Input events: active" : "Input events: blocked",
-            state: eventTapActive ? .success : .blocked
+            title: hotKeyRef != nil ? "Shortcut: active" : "Shortcut: blocked",
+            state: hotKeyRef != nil ? .success : .blocked
         )
     }
 
