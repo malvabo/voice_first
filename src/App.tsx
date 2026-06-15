@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { polishDictation, transcribeWithCartesia } from './lib/cartesiaTranscribe'
 
 // ---------------------------------------------------------------------------
@@ -68,23 +61,31 @@ function previewText(text: string): string {
   return trimmed.length > 60 ? `${trimmed.slice(0, 60)}…` : trimmed
 }
 
+// Read the accent straight from the token system so the canvas can never
+// drift from the CSS palette.
+function accentColor(): string {
+  if (typeof window === 'undefined') return '#f6b93b'
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue('--amber')
+    .trim()
+  return value || '#f6b93b'
+}
+
 // ---------------------------------------------------------------------------
 // VoiLogo
 // ---------------------------------------------------------------------------
 
 function VoiLogo() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+    <div className="brand">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
         <rect x="2" y="9" width="2.5" height="6" rx="1.25" fill="var(--amber)" />
         <rect x="6.5" y="5" width="2.5" height="14" rx="1.25" fill="var(--amber)" />
         <rect x="11" y="2" width="2.5" height="20" rx="1.25" fill="var(--amber)" />
         <rect x="15.5" y="5" width="2.5" height="14" rx="1.25" fill="var(--amber)" />
         <rect x="20" y="9" width="2.5" height="6" rx="1.25" fill="var(--amber)" />
       </svg>
-      <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em' }}>
-        Voi
-      </span>
+      <span className="brand__name">Voi</span>
     </div>
   )
 }
@@ -105,42 +106,37 @@ function DictationSurface({
   onStart: () => void
 }) {
   return (
-    <div style={dictationShell}>
-      <div style={statusPill}>
-        <span style={tinyDot} />
+    <div className="dictation">
+      <div className="status-pill">
+        <span className="status-pill__dot" />
         Ready across your Mac
       </div>
 
-      <div style={composer}>
+      <div className="composer">
         <textarea
           readOnly
+          className={`composer__text${latest ? '' : ' composer__text--placeholder'}`}
           value={
             latest?.text ??
             'Say it naturally. Voi removes pauses, fixes changed thoughts, and formats the final text.'
           }
-          style={{
-            ...composerText,
-            color: latest ? '#f3f4f8' : '#6b7186',
-          }}
         />
-        <div style={composerFooter}>
-          <span style={{ color: '#6b7186', fontSize: 13 }}>
+        <div className="composer__footer">
+          <span className="composer__hint">
             {latest
               ? `${formatTimer(latest.durationMs)} clipped to clipboard`
               : 'Try: Let’s meet at 2, actually 3.'}
           </span>
-          <button style={toolbarButton} onClick={onCopy} disabled={!latest}>
+          <button className="toolbar__btn" onClick={onCopy} disabled={!latest}>
             {copied ? 'Copied' : 'Copy'}
           </button>
         </div>
       </div>
 
-      <button style={flowMicButton} aria-label="Start dictation" onClick={onStart}>
+      <button className="mic-cta" aria-label="Start dictation" onClick={onStart}>
         <MicIcon />
       </button>
-      <span style={{ color: '#9aa0b4', fontSize: 15 }}>
-        Click to speak
-      </span>
+      <span className="dictation__hint">Click to speak</span>
     </div>
   )
 }
@@ -160,6 +156,7 @@ function AmberWave({ analyser }: { analyser: AnalyserNode | null }) {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
+    const fill = accentColor()
     let raf = 0
     const data = analyser ? new Uint8Array(analyser.frequencyBinCount) : null
 
@@ -182,6 +179,7 @@ function AmberWave({ analyser }: { analyser: AnalyserNode | null }) {
       const barWidth = (width - gap * (BAR_COUNT - 1)) / BAR_COUNT
       const step = data ? Math.floor(data.length / BAR_COUNT) : 0
 
+      ctx.fillStyle = fill
       for (let i = 0; i < BAR_COUNT; i++) {
         let amplitude = 0
         if (data && step > 0) {
@@ -190,7 +188,6 @@ function AmberWave({ analyser }: { analyser: AnalyserNode | null }) {
         const barHeight = Math.max(2, amplitude * height)
         const x = i * (barWidth + gap)
         const y = (height - barHeight) / 2
-        ctx.fillStyle = '#f6b93b'
         const r = Math.min(barWidth / 2, 2)
         ctx.beginPath()
         ctx.roundRect(x, y, barWidth, barHeight, r)
@@ -204,12 +201,7 @@ function AmberWave({ analyser }: { analyser: AnalyserNode | null }) {
     return () => cancelAnimationFrame(raf)
   }, [analyser])
 
-  return (
-    <canvas
-      ref={canvasRef}
-      style={{ width: '100%', height: 64, display: 'block' }}
-    />
-  )
+  return <canvas ref={canvasRef} className="wave" />
 }
 
 // ---------------------------------------------------------------------------
@@ -228,23 +220,21 @@ function RecordingOverlay({
   onDone: () => void
 }) {
   return (
-    <div style={overlayBackdrop}>
-      <div style={bottomSheet}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={pulsingDot} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ color: '#9aa0b4', fontSize: 13 }}>Listening</span>
-            <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 22, fontWeight: 600 }}>
-              {formatTimer(elapsedMs)}
-            </span>
+    <div className="overlay overlay--bottom">
+      <div className="sheet" role="dialog" aria-label="Recording">
+        <div className="sheet__listening">
+          <span className="dot" />
+          <div className="listening-meta">
+            <span className="listening-label">Listening</span>
+            <span className="timer">{formatTimer(elapsedMs)}</span>
           </div>
         </div>
         <AmberWave analyser={analyser} />
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-          <button style={ghostButton} onClick={onCancel}>
+        <div className="sheet__actions">
+          <button className="btn btn--ghost" onClick={onCancel}>
             Cancel
           </button>
-          <button style={amberButton} onClick={onDone}>
+          <button className="btn btn--amber" onClick={onDone}>
             Polish
           </button>
         </div>
@@ -259,19 +249,10 @@ function RecordingOverlay({
 
 function TranscribingOverlay() {
   return (
-    <div style={overlayBackdrop}>
-      <div
-        style={{
-          ...bottomSheet,
-          alignItems: 'center',
-          gap: 18,
-          paddingBottom: 40,
-        }}
-      >
-        <span style={spinner} />
-        <span style={{ letterSpacing: '0.18em', fontSize: 13, color: 'var(--amber)' }}>
-          POLISHING
-        </span>
+    <div className="overlay overlay--bottom">
+      <div className="sheet transcribing" role="status" aria-live="polite">
+        <span className="spinner" />
+        <span className="transcribing__label">POLISHING</span>
       </div>
     </div>
   )
@@ -293,27 +274,36 @@ function SettingsModal({
   const [value, setValue] = useState(initialKey)
 
   return (
-    <div style={overlayBackdrop} onClick={onClose}>
-      <div style={modalCard} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Settings</h2>
-        <label style={{ fontSize: 13, color: '#9aa0b4' }}>Cartesia API key</label>
+    <div className="overlay overlay--center" onClick={onClose}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-label="Settings"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="modal__title">Settings</h2>
+        <label className="field-label" htmlFor="cartesia-key">
+          Cartesia API key
+        </label>
         <input
+          id="cartesia-key"
+          className="input"
           type="password"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="sk_car_..."
-          style={textInput}
           autoFocus
         />
-        <span style={{ fontSize: 12, color: '#6b7186' }}>
-          Used only in your browser.
+        <span className="field-hint">
+          Stored only in this browser. Sent straight to Cartesia to transcribe —
+          nowhere else.
         </span>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button style={ghostButton} onClick={onClose}>
+        <div className="modal__actions">
+          <button className="btn btn--ghost" onClick={onClose}>
             Cancel
           </button>
-          <button style={amberButton} onClick={() => onSave(value.trim())}>
-            Save
+          <button className="btn btn--amber" onClick={() => onSave(value.trim())}>
+            Save key
           </button>
         </div>
       </div>
@@ -355,23 +345,20 @@ function EntryDetail({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 32, gap: 18 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <span style={{ fontSize: 13, color: '#6b7186' }}>
-          {formatDate(entry.createdAt)}
-        </span>
-        <span style={{ fontSize: 13, color: '#6b7186' }}>
-          {formatTimer(entry.durationMs)}
-        </span>
+    <div className="detail">
+      <div className="detail__meta">
+        <span>{formatDate(entry.createdAt)}</span>
+        <span className="meta-dot">·</span>
+        <span>{formatTimer(entry.durationMs)}</span>
       </div>
 
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button style={toolbarButton} onClick={copy}>
+      <div className="toolbar">
+        <button className="toolbar__btn" onClick={copy}>
           {copied ? 'Copied' : 'Copy'}
         </button>
         {editing ? (
           <button
-            style={toolbarButton}
+            className="toolbar__btn"
             onClick={() => {
               onSave(draft)
               setEditing(false)
@@ -380,24 +367,26 @@ function EntryDetail({
             Save
           </button>
         ) : (
-          <button style={toolbarButton} onClick={() => setEditing(true)}>
+          <button className="toolbar__btn" onClick={() => setEditing(true)}>
             Edit
           </button>
         )}
-        <button style={{ ...toolbarButton, color: '#e06c75' }} onClick={onDelete}>
+        <button className="toolbar__btn toolbar__btn--danger" onClick={onDelete}>
           Delete
         </button>
       </div>
 
       {editing ? (
         <textarea
+          className="transcript-edit"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          style={transcriptTextarea}
           autoFocus
         />
       ) : (
-        <div style={transcriptView}>{entry.text || 'Empty recording'}</div>
+        <div className={`transcript${entry.text ? '' : ' transcript--empty'}`}>
+          {entry.text || 'Nothing was transcribed for this recording.'}
+        </div>
       )}
     </div>
   )
@@ -502,7 +491,7 @@ export default function App() {
     } catch {
       teardown()
       setRecorderState('idle')
-      setError('Could not access the microphone.')
+      setError('Could not reach the microphone. Check your browser permissions and try again.')
     }
   }, [cartesiaKey, teardown])
 
@@ -576,26 +565,23 @@ export default function App() {
     }
   }, [teardown])
 
-  const deleteEntry = useCallback(
-    (id: string) => {
-      setEntries((prev) => prev.filter((e) => e.id !== id))
-      setSelectedId((cur) => (cur === id ? null : cur))
-    },
-    [],
-  )
+  const deleteEntry = useCallback((id: string) => {
+    setEntries((prev) => prev.filter((e) => e.id !== id))
+    setSelectedId((cur) => (cur === id ? null : cur))
+  }, [])
 
   const updateEntry = useCallback((id: string, text: string) => {
     setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, text } : e)))
   }, [])
 
   return (
-    <div style={{ display: 'flex', height: '100%', width: '100%' }}>
+    <div className="app">
       {/* Sidebar */}
-      <aside style={sidebar}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <aside className="sidebar">
+        <div className="sidebar__head">
           <VoiLogo />
           <button
-            style={iconButton}
+            className="icon-btn"
             aria-label="Settings"
             onClick={() => setSettingsOpen(true)}
           >
@@ -603,29 +589,28 @@ export default function App() {
           </button>
         </div>
 
-        <button style={{ ...amberButton, width: '100%' }} onClick={startRecording}>
+        <button
+          className="btn btn--amber btn--block btn--record"
+          onClick={startRecording}
+        >
+          <MicGlyph />
           Start dictation
         </button>
 
-        <div style={entryList}>
+        <div className="entry-list">
           {entries.length === 0 ? (
-            <div style={{ color: '#5a6078', fontSize: 13, padding: '8px 4px' }}>
-              No dictations yet.
+            <div className="entry-empty">
+              No dictations yet. Your transcripts will collect here.
             </div>
           ) : (
             entries.map((entry) => (
               <button
                 key={entry.id}
                 onClick={() => setSelectedId(entry.id)}
-                style={{
-                  ...entryItem,
-                  ...(entry.id === selectedId ? entryItemActive : null),
-                }}
+                className={`entry${entry.id === selectedId ? ' entry--active' : ''}`}
               >
-                <span style={{ fontSize: 14, color: '#e8e8ed' }}>
-                  {previewText(entry.text)}
-                </span>
-                <span style={{ fontSize: 11, color: '#6b7186' }}>
+                <span className="entry__title">{previewText(entry.text)}</span>
+                <span className="entry__meta">
                   {formatDate(entry.createdAt)} · {formatTimer(entry.durationMs)}
                 </span>
               </button>
@@ -635,8 +620,8 @@ export default function App() {
       </aside>
 
       {/* Main */}
-      <main style={mainArea}>
-        {error && <div style={errorBanner}>{error}</div>}
+      <main className="main">
+        {error && <div className="error">{error}</div>}
         {selected ? (
           <EntryDetail
             entry={selected}
@@ -684,302 +669,60 @@ export default function App() {
 
 function MicIcon() {
   return (
-    <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
-      <rect x="9" y="2" width="6" height="12" rx="3" fill="#0a0b14" />
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor" />
       <path
         d="M5 11a7 7 0 0 0 14 0"
-        stroke="#0a0b14"
+        stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
       />
-      <line x1="12" y1="18" x2="12" y2="22" stroke="#0a0b14" strokeWidth="2" strokeLinecap="round" />
+      <line
+        x1="12"
+        y1="18"
+        x2="12"
+        y2="22"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function MicGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor" />
+      <path
+        d="M5 11a7 7 0 0 0 14 0"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <line
+        x1="12"
+        y1="18"
+        x2="12"
+        y2="22"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
     </svg>
   )
 }
 
 function GearIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="3" stroke="#9aa0b4" strokeWidth="2" />
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
       <path
         d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"
-        stroke="#9aa0b4"
+        stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
       />
     </svg>
   )
-}
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
-const sidebar: CSSProperties = {
-  width: 260,
-  flexShrink: 0,
-  background: 'var(--sidebar-bg)',
-  borderRight: '1px solid #1a1c2b',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 16,
-  padding: 16,
-}
-
-const mainArea: CSSProperties = {
-  flex: 1,
-  background: 'var(--bg)',
-  position: 'relative',
-  overflow: 'auto',
-}
-
-const entryList: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 4,
-  overflowY: 'auto',
-  flex: 1,
-  marginRight: -8,
-  paddingRight: 8,
-}
-
-const entryItem: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 4,
-  textAlign: 'left',
-  background: 'transparent',
-  border: 'none',
-  borderRadius: 8,
-  padding: '10px 10px',
-}
-
-const entryItemActive: CSSProperties = {
-  background: '#16182a',
-}
-
-const amberButton: CSSProperties = {
-  background: 'var(--amber)',
-  color: '#1a1300',
-  border: 'none',
-  borderRadius: 10,
-  padding: '10px 18px',
-  fontSize: 14,
-  fontWeight: 600,
-}
-
-const ghostButton: CSSProperties = {
-  background: 'transparent',
-  color: '#9aa0b4',
-  border: '1px solid #2a2d40',
-  borderRadius: 10,
-  padding: '10px 18px',
-  fontSize: 14,
-  fontWeight: 500,
-}
-
-const toolbarButton: CSSProperties = {
-  background: '#16182a',
-  color: '#e8e8ed',
-  border: '1px solid #24263a',
-  borderRadius: 8,
-  padding: '7px 14px',
-  fontSize: 13,
-  fontWeight: 500,
-}
-
-const iconButton: CSSProperties = {
-  background: 'transparent',
-  border: 'none',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: 6,
-  borderRadius: 8,
-}
-
-const dictationShell: CSSProperties = {
-  height: '100%',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 18,
-  padding: 32,
-}
-
-const statusPill: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  background: '#121420',
-  border: '1px solid #23263a',
-  borderRadius: 999,
-  padding: '7px 12px',
-  color: '#b9bfd0',
-  fontSize: 13,
-  boxShadow: '0 10px 40px rgba(0,0,0,0.18)',
-}
-
-const tinyDot: CSSProperties = {
-  width: 7,
-  height: 7,
-  borderRadius: '50%',
-  background: '#71d38a',
-}
-
-const composer: CSSProperties = {
-  width: 'min(760px, 100%)',
-  minHeight: 260,
-  background: '#10121d',
-  border: '1px solid #24263a',
-  borderRadius: 18,
-  display: 'flex',
-  flexDirection: 'column',
-  boxShadow: '0 28px 90px rgba(0,0,0,0.28)',
-  overflow: 'hidden',
-}
-
-const composerText: CSSProperties = {
-  flex: 1,
-  width: '100%',
-  minHeight: 210,
-  background: 'transparent',
-  border: 'none',
-  color: '#f3f4f8',
-  resize: 'none',
-  outline: 'none',
-  padding: 24,
-  fontSize: 22,
-  lineHeight: 1.45,
-}
-
-const composerFooter: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 16,
-  borderTop: '1px solid #202235',
-  padding: '12px 14px 12px 18px',
-}
-
-const flowMicButton: CSSProperties = {
-  width: 78,
-  height: 78,
-  borderRadius: '50%',
-  background: 'var(--amber)',
-  border: 'none',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  boxShadow: '0 0 0 0 rgba(246,185,59,0.5)',
-}
-
-const overlayBackdrop: CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  background: 'rgba(4,5,12,0.55)',
-  display: 'flex',
-  alignItems: 'flex-end',
-  justifyContent: 'center',
-  zIndex: 50,
-}
-
-const bottomSheet: CSSProperties = {
-  width: '100%',
-  maxWidth: 560,
-  background: 'var(--sidebar-bg)',
-  borderTop: '1px solid #1f2235',
-  borderTopLeftRadius: 20,
-  borderTopRightRadius: 20,
-  padding: '24px 28px 28px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 20,
-  animation: 'voi-slide-up 0.22s ease-out',
-}
-
-const modalCard: CSSProperties = {
-  width: '100%',
-  maxWidth: 420,
-  margin: 'auto',
-  background: 'var(--sidebar-bg)',
-  border: '1px solid #1f2235',
-  borderRadius: 16,
-  padding: 24,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 12,
-}
-
-const textInput: CSSProperties = {
-  background: '#0a0b14',
-  border: '1px solid #24263a',
-  borderRadius: 10,
-  padding: '10px 12px',
-  color: '#e8e8ed',
-  fontSize: 14,
-  outline: 'none',
-}
-
-const transcriptView: CSSProperties = {
-  flex: 1,
-  fontSize: 16,
-  lineHeight: 1.7,
-  color: '#e8e8ed',
-  whiteSpace: 'pre-wrap',
-  overflowY: 'auto',
-}
-
-const transcriptTextarea: CSSProperties = {
-  flex: 1,
-  background: '#0a0b14',
-  border: '1px solid #24263a',
-  borderRadius: 12,
-  padding: 16,
-  color: '#e8e8ed',
-  fontSize: 16,
-  lineHeight: 1.7,
-  resize: 'none',
-  outline: 'none',
-}
-
-const pulsingDot: CSSProperties = {
-  width: 12,
-  height: 12,
-  borderRadius: '50%',
-  background: 'var(--amber)',
-  animation: 'voi-pulse 1.1s ease-in-out infinite',
-}
-
-const spinner: CSSProperties = {
-  width: 34,
-  height: 34,
-  borderRadius: '50%',
-  border: '3px solid #2a2d40',
-  borderTopColor: 'var(--amber)',
-  animation: 'voi-spin 0.8s linear infinite',
-}
-
-const errorBanner: CSSProperties = {
-  margin: 16,
-  padding: '10px 14px',
-  borderRadius: 10,
-  background: 'rgba(224,108,117,0.12)',
-  border: '1px solid rgba(224,108,117,0.4)',
-  color: '#e06c75',
-  fontSize: 13,
-}
-
-// Inject keyframes once
-const styleId = 'voi-keyframes'
-if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
-  const style = document.createElement('style')
-  style.id = styleId
-  style.textContent = `
-    @keyframes voi-slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
-    @keyframes voi-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
-    @keyframes voi-spin { to { transform: rotate(360deg); } }
-  `
-  document.head.appendChild(style)
 }

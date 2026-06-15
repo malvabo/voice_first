@@ -1,7 +1,6 @@
 import AppKit
 import AVFoundation
 import ApplicationServices
-import CoreImage
 import Foundation
 
 private let cartesiaURL = URL(string: "https://api.cartesia.ai/stt")!
@@ -17,61 +16,56 @@ struct RecordedNote: Codable {
     let createdAt: Date
 }
 
+// A single, consistent status-chip language: one calm hue per state, with
+// uniform fill and border alphas so the three chips read as a set rather than
+// three unrelated colors.
 private enum ChipState {
     case success
     case warning
     case blocked
     case neutral
 
-    var textColor: NSColor {
+    /// The hue that carries the state. Text, border, and fill all derive from it.
+    private var hue: NSColor {
         switch self {
         case .success:
-            return NSColor(calibratedWhite: 0.94, alpha: 1)
+            return NSColor(calibratedRed: 0.42, green: 0.82, blue: 0.52, alpha: 1) // calm green
         case .warning:
-            return NSColor(calibratedWhite: 0.92, alpha: 1)
+            return NSColor(calibratedRed: 0.96, green: 0.725, blue: 0.231, alpha: 1) // amber
         case .blocked:
-            return NSColor(calibratedWhite: 1, alpha: 1)
+            return NSColor(calibratedRed: 0.93, green: 0.42, blue: 0.44, alpha: 1) // soft red
         case .neutral:
-            return NSColor(calibratedWhite: 0.70, alpha: 1)
+            return NSColor(calibratedWhite: 0.78, alpha: 1)
         }
     }
 
+    var textColor: NSColor {
+        // Brighten the hue toward white so labels stay legible on the dark fill.
+        hue.blended(withFraction: 0.55, of: NSColor.white) ?? hue
+    }
+
+    var dotColor: NSColor { hue }
+
     var borderColor: NSColor {
-        switch self {
-        case .success:
-            return NSColor(calibratedWhite: 1, alpha: 0.22)
-        case .warning:
-            return NSColor(calibratedRed: 0.95, green: 0.48, blue: 0.08, alpha: 0.55)
-        case .blocked:
-            return NSColor(calibratedRed: 0.96, green: 0.02, blue: 0.12, alpha: 0.75)
-        case .neutral:
-            return NSColor(calibratedWhite: 1, alpha: 0.16)
-        }
+        hue.withAlphaComponent(0.45)
     }
 
     var backgroundColor: NSColor {
-        switch self {
-        case .success:
-            return NSColor(calibratedWhite: 0.07, alpha: 0.82)
-        case .warning:
-            return NSColor(calibratedRed: 0.28, green: 0.13, blue: 0.02, alpha: 0.82)
-        case .blocked:
-            return NSColor(calibratedRed: 0.28, green: 0.0, blue: 0.03, alpha: 0.88)
-        case .neutral:
-            return NSColor(calibratedWhite: 0.03, alpha: 0.76)
-        }
+        hue.withAlphaComponent(0.12)
     }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegate {
-    private let bgColor = NSColor(calibratedRed: 0.035, green: 0.035, blue: 0.038, alpha: 1)
-    private let panelColor = NSColor(calibratedRed: 0.075, green: 0.075, blue: 0.078, alpha: 0.92)
-    private let borderColor = NSColor(calibratedWhite: 1, alpha: 0.16)
-    private let primaryTextColor = NSColor(calibratedWhite: 0.92, alpha: 1)
-    private let secondaryTextColor = NSColor(calibratedWhite: 0.64, alpha: 1)
-    private let mutedTextColor = NSColor(calibratedWhite: 0.42, alpha: 1)
-    private let signalColor = NSColor(calibratedRed: 0.86, green: 0.02, blue: 0.12, alpha: 1)
+    private let bgColor = NSColor(calibratedRed: 0.043, green: 0.045, blue: 0.052, alpha: 1)
+    private let panelColor = NSColor(calibratedWhite: 0.12, alpha: 0.55)
+    private let borderColor = NSColor(calibratedWhite: 1, alpha: 0.10)
+    private let primaryTextColor = NSColor(calibratedWhite: 0.93, alpha: 1)
+    private let secondaryTextColor = NSColor(calibratedWhite: 0.62, alpha: 1)
+    private let mutedTextColor = NSColor(calibratedWhite: 0.45, alpha: 1)
+    // Voi's one accent — the amber of the waveform mark. Spent with restraint.
+    private let accentColor = NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 1)
+    private let accentInkColor = NSColor(calibratedRed: 0.10, green: 0.075, blue: 0.0, alpha: 1)
 
     private var statusItem: NSStatusItem!
     private var recorder: AVAudioRecorder?
@@ -157,9 +151,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         NSApp.mainMenu = mainMenu
     }
 
-    private func monoLabel(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: NSColor? = nil) -> NSTextField {
+    // System-font UI label — the calm, friendly voice of the dashboard.
+    private func uiLabel(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: NSColor? = nil) -> NSTextField {
         let label = NSTextField(labelWithString: text)
-        label.font = .monospacedSystemFont(ofSize: size, weight: weight)
+        label.font = .systemFont(ofSize: size, weight: weight)
         label.textColor = color ?? primaryTextColor
         label.backgroundColor = .clear
         label.drawsBackground = false
@@ -175,16 +170,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         button.bezelStyle = .regularSquare
         button.alignment = .center
         button.wantsLayer = true
-        button.layer?.cornerRadius = 2
+        button.layer?.cornerRadius = 9
         button.layer?.borderWidth = 1
-        button.layer?.borderColor = (accent ? signalColor : borderColor).cgColor
-        button.layer?.backgroundColor = (accent ? NSColor(calibratedRed: 0.32, green: 0.0, blue: 0.04, alpha: 0.92) : panelColor).cgColor
+        button.layer?.borderColor = (accent ? NSColor.clear : borderColor).cgColor
+        button.layer?.backgroundColor = (accent ? accentColor : panelColor).cgColor
         button.attributedTitle = NSAttributedString(
-            string: button.title.uppercased(),
+            string: button.title,
             attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold),
-                .foregroundColor: accent ? NSColor.white : primaryTextColor,
-                .kern: 1.6,
+                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                .foregroundColor: accent ? accentInkColor : primaryTextColor,
             ]
         )
     }
@@ -199,53 +193,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 
     private func styleTextField(_ input: NSTextField) {
-        input.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        input.font = .systemFont(ofSize: 13, weight: .regular)
         input.textColor = primaryTextColor
-        input.backgroundColor = NSColor(calibratedWhite: 0.02, alpha: 0.72)
+        input.backgroundColor = NSColor(calibratedWhite: 0.02, alpha: 0.55)
         input.isBezeled = false
         input.focusRingType = .none
         input.wantsLayer = true
-        input.layer?.cornerRadius = 2
+        input.layer?.cornerRadius = 9
         input.layer?.borderWidth = 1
         input.layer?.borderColor = borderColor.cgColor
-        input.layer?.backgroundColor = NSColor(calibratedWhite: 0.02, alpha: 0.72).cgColor
+        input.layer?.backgroundColor = NSColor(calibratedWhite: 0.02, alpha: 0.55).cgColor
     }
 
     private func styleScrollView(_ scrollView: NSScrollView, textView: NSTextView, mono: Bool = false) {
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
+        scrollView.drawsBackground = false
         scrollView.wantsLayer = true
-        scrollView.layer?.cornerRadius = 2
+        scrollView.layer?.cornerRadius = 12
         scrollView.layer?.borderWidth = 1
         scrollView.layer?.borderColor = borderColor.cgColor
         scrollView.layer?.backgroundColor = panelColor.cgColor
+        scrollView.layer?.masksToBounds = true
 
         textView.isEditable = false
         textView.isSelectable = true
-        textView.drawsBackground = true
-        textView.backgroundColor = panelColor
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
         textView.textColor = mono ? secondaryTextColor : primaryTextColor
         textView.font = mono
             ? .monospacedSystemFont(ofSize: 11, weight: .regular)
-            : .systemFont(ofSize: 13, weight: .regular)
-        textView.textContainerInset = NSSize(width: 14, height: 12)
+            : .systemFont(ofSize: 13.5, weight: .regular)
+        textView.textContainerInset = NSSize(width: 16, height: 14)
     }
 
     private func makeChip(frame: NSRect) -> NSTextField {
-        let chip = monoLabel("", size: 10, weight: .semibold, color: primaryTextColor)
+        let chip = uiLabel("", size: 11.5, weight: .medium, color: primaryTextColor)
         chip.frame = frame
         chip.alignment = .center
         chip.wantsLayer = true
-        chip.layer?.cornerRadius = 2
+        chip.layer?.cornerRadius = frame.height / 2
         chip.layer?.borderWidth = 1
         chip.layer?.borderColor = borderColor.cgColor
-        chip.layer?.backgroundColor = NSColor(calibratedWhite: 0.03, alpha: 0.76).cgColor
+        chip.layer?.backgroundColor = NSColor(calibratedWhite: 0.03, alpha: 0.5).cgColor
         return chip
     }
 
     private func updateChip(_ chip: NSTextField?, title: String, state: ChipState) {
-        chip?.stringValue = title
-        chip?.textColor = state.textColor
+        // A leading status dot in the state hue, then the label — a small,
+        // consistent health-indicator pattern shared by all three chips.
+        let attributed = NSMutableAttributedString(
+            string: "● ",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 8, weight: .bold),
+                .foregroundColor: state.dotColor,
+                .baselineOffset: 1.5,
+            ]
+        )
+        attributed.append(NSAttributedString(
+            string: title,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11.5, weight: .medium),
+                .foregroundColor: state.textColor,
+            ]
+        ))
+        chip?.attributedStringValue = attributed
         chip?.layer?.borderColor = state.borderColor.cgColor
         chip?.layer?.backgroundColor = state.backgroundColor.cgColor
     }
@@ -320,7 +332,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
         CGEvent.tapEnable(tap: eventTap, enable: true)
         refreshPermissionStatus(eventTapActive: true)
-        shortcutLabel?.stringValue = "INPUT_EVENTS_RESUMED / TRY_OPTION_SPACE_AGAIN"
+        shortcutLabel?.stringValue = "Input events resumed. Try Option-Space again."
     }
 
     fileprivate func handleFunctionFlagChange(_ isFunctionDown: Bool) {
@@ -363,7 +375,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             return
         case .denied, .restricted:
             setStatus("Microphone blocked")
-            shortcutLabel?.stringValue = "MICROPHONE_BLOCKED / ENABLE_IN_SYSTEM_SETTINGS"
+            shortcutLabel?.stringValue = "Microphone is blocked. Enable it in System Settings → Privacy."
             showSetupWindow()
             refreshPermissionStatus(eventTapActive: eventTap != nil)
             return
@@ -410,23 +422,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private func requestMicrophoneAccessOnce() {
         guard !hasRequestedMicrophoneThisSession else {
             setStatus("Microphone pending")
-            shortcutLabel?.stringValue = "MICROPHONE_PENDING / RESPOND_TO_SYSTEM_PROMPT"
+            shortcutLabel?.stringValue = "Waiting on the microphone prompt — please respond to it."
             return
         }
 
         hasRequestedMicrophoneThisSession = true
         setStatus("Allow microphone")
-        shortcutLabel?.stringValue = "MICROPHONE_REQUESTED / ALLOW_ONCE_THEN_PRESS_SHORTCUT"
+        shortcutLabel?.stringValue = "Allow the microphone once, then hold Option-Space again."
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
             Task { @MainActor in
                 guard let self else { return }
                 self.refreshPermissionStatus(eventTapActive: self.eventTap != nil)
                 if granted {
                     self.setStatus("Voi ready")
-                    self.shortcutLabel?.stringValue = "MICROPHONE_ALLOWED / TRY_OPTION_SPACE_AGAIN"
+                    self.shortcutLabel?.stringValue = "Microphone allowed. Hold Option-Space to dictate."
                 } else {
                     self.setStatus("Microphone blocked")
-                    self.shortcutLabel?.stringValue = "MICROPHONE_BLOCKED / ENABLE_IN_SYSTEM_SETTINGS"
+                    self.shortcutLabel?.stringValue = "Microphone is blocked. Enable it in System Settings → Privacy."
                     self.showSetupWindow()
                 }
             }
@@ -528,8 +540,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 
     private func setStatus(_ message: String) {
-        statusItem.button?.title = message == "Voi ready" ? "Voi Ready" : "Voi: \(message)"
-        statusLabel?.stringValue = message == "Voi ready" ? "READY / HOLD_OPTION_SPACE" : message.uppercased().replacingOccurrences(of: " ", with: "_")
+        statusItem.button?.title = message == "Voi ready" ? "Voi" : "Voi: \(message)"
+        statusLabel?.stringValue = message == "Voi ready" ? "Ready — hold Option-Space" : message
     }
 
     @objc private func showDashboard() {
@@ -581,13 +593,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.autoresizingMask = [.width, .height]
         window.contentView = content
 
-        let title = monoLabel("Voi is ready", size: 27, weight: .bold)
-        title.frame = NSRect(x: 28, y: 602, width: 704, height: 36)
+        let logo = WaveMarkView(frame: NSRect(x: 28, y: 606, width: 30, height: 28), color: accentColor)
+        content.addSubview(logo)
+
+        let title = uiLabel("Voi is ready", size: 26, weight: .bold)
+        title.frame = NSRect(x: 66, y: 602, width: 666, height: 36)
         content.addSubview(title)
         titleLabel = title
 
-        let subtitle = monoLabel("Hold Option-Space, speak, release to paste.", size: 12, weight: .medium, color: secondaryTextColor)
-        subtitle.textColor = .secondaryLabelColor
+        let subtitle = uiLabel("Hold Option-Space, speak, release to paste.", size: 13, weight: .regular, color: secondaryTextColor)
         subtitle.frame = NSRect(x: 28, y: 560, width: 704, height: 42)
         subtitle.lineBreakMode = .byWordWrapping
         subtitle.maximumNumberOfLines = 2
@@ -597,7 +611,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         let signalLine = SignalLineView(frame: NSRect(x: 28, y: 538, width: 704, height: 8))
         content.addSubview(signalLine)
 
-        let permission = monoLabel("Setup health", size: 11, weight: .semibold, color: primaryTextColor)
+        let permission = uiLabel("Setup health", size: 12, weight: .semibold, color: secondaryTextColor)
         permission.frame = NSRect(x: 28, y: 510, width: 160, height: 20)
         content.addSubview(permission)
         permissionLabel = permission
@@ -628,7 +642,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         )
         content.addSubview(testButton)
 
-        let label = monoLabel("Cartesia API key", size: 11, weight: .semibold, color: primaryTextColor)
+        let label = uiLabel("Cartesia API key", size: 12, weight: .semibold, color: secondaryTextColor)
         label.frame = NSRect(x: 28, y: 438, width: 190, height: 20)
         content.addSubview(label)
 
@@ -649,7 +663,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         saveButton.keyEquivalent = "\r"
         content.addSubview(saveButton)
 
-        let notesLabel = monoLabel("Recorded notes", size: 13, weight: .semibold, color: primaryTextColor)
+        let notesLabel = uiLabel("Recorded notes", size: 12, weight: .semibold, color: secondaryTextColor)
         notesLabel.frame = NSRect(x: 28, y: 358, width: 220, height: 22)
         content.addSubview(notesLabel)
 
@@ -671,7 +685,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.addSubview(diagnosticsButton)
         diagnosticsToggleButton = diagnosticsButton
 
-        let shortcut = monoLabel("Waiting for Option-Space.", size: 11, weight: .regular, color: secondaryTextColor)
+        let shortcut = uiLabel("Waiting for Option-Space.", size: 12, weight: .regular, color: secondaryTextColor)
         shortcut.frame = NSRect(x: 210, y: 108, width: 522, height: 20)
         content.addSubview(shortcut)
         shortcutLabel = shortcut
@@ -687,7 +701,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         eventLogTextView = eventTextView
         refreshEventLog()
 
-        let status = monoLabel("Ready", size: 11, weight: .medium, color: mutedTextColor)
+        let status = uiLabel("Ready", size: 11, weight: .medium, color: mutedTextColor)
         status.frame = NSRect(x: 28, y: 112, width: 704, height: 20)
         status.isHidden = true
         content.addSubview(status)
@@ -875,192 +889,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 }
 
+/// A calm, near-black canvas with a single soft amber glow behind the title.
+/// Deliberately quiet: the content does the talking, the way Wispr Flow keeps
+/// its surface clean. No photo, motif, grain, or grid competing with the form.
 final class DashboardBackgroundView: NSView {
-    private static let backgroundImage: NSImage? = {
-        guard let url = Bundle.main.url(forResource: "PersonInDarkRoom", withExtension: "jpg") else {
-            return nil
-        }
+    override var isFlipped: Bool { false }
 
-        guard let inputImage = CIImage(contentsOf: url) else {
-            return NSImage(contentsOf: url)
-        }
+    override func draw(_ dirtyRect: NSRect) {
+        // Base: a deep, slightly cool ink with a gentle top-to-bottom falloff.
+        let base = NSGradient(colors: [
+            NSColor(calibratedRed: 0.055, green: 0.057, blue: 0.066, alpha: 1),
+            NSColor(calibratedRed: 0.039, green: 0.040, blue: 0.047, alpha: 1),
+        ])
+        base?.draw(in: bounds, angle: -90)
 
-        let filter = CIFilter(name: "CIGaussianBlur")
-        filter?.setValue(inputImage.clampedToExtent(), forKey: kCIInputImageKey)
-        filter?.setValue(18.0, forKey: kCIInputRadiusKey)
+        // One soft amber glow in the upper-left, anchored near the title.
+        let glowCenter = NSPoint(x: bounds.width * 0.12, y: bounds.height * 0.86)
+        let glowRadius = bounds.width * 0.5
+        let glow = NSGradient(colors: [
+            NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 0.14),
+            NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 0.0),
+        ])
+        glow?.draw(
+            fromCenter: glowCenter, radius: 0,
+            toCenter: glowCenter, radius: glowRadius,
+            options: []
+        )
+    }
+}
 
-        guard let outputImage = filter?.outputImage?.cropped(to: inputImage.extent) else {
-            return NSImage(contentsOf: url)
-        }
+/// The Voi signature — five amber bars echoing the brand waveform mark.
+final class WaveMarkView: NSView {
+    private let color: NSColor
 
-        let context = CIContext(options: nil)
-        guard let cgImage = context.createCGImage(outputImage, from: inputImage.extent) else {
-            return NSImage(contentsOf: url)
-        }
+    init(frame: NSRect, color: NSColor) {
+        self.color = color
+        super.init(frame: frame)
+    }
 
-        return NSImage(cgImage: cgImage, size: NSSize(width: inputImage.extent.width, height: inputImage.extent.height))
-    }()
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override var isFlipped: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedRed: 0.035, green: 0.035, blue: 0.038, alpha: 1).setFill()
-        bounds.fill()
-
-        drawPhotoBackground()
-        drawFrequencyMotif()
-        drawGrain()
-
-        NSColor(calibratedWhite: 1, alpha: 0.06).setFill()
-        let startX = bounds.width - 156
-        let startY = 78.0
-        for row in 0..<4 {
-            for col in 0..<5 {
-                let dot = NSRect(
-                    x: startX + CGFloat(col) * 22,
-                    y: startY + CGFloat(row) * 22,
-                    width: 2,
-                    height: 2
-                )
-                NSBezierPath(ovalIn: dot).fill()
-            }
-        }
-    }
-
-    private func drawPhotoBackground() {
-        guard let image = Self.backgroundImage, image.size.width > 0, image.size.height > 0 else {
-            let fallback = NSGradient(colors: [
-                NSColor(calibratedWhite: 0.02, alpha: 0.98),
-                NSColor(calibratedWhite: 0.10, alpha: 0.7),
-                NSColor(calibratedWhite: 0.02, alpha: 0.98),
-            ])
-            fallback?.draw(in: bounds, angle: 0)
-            return
-        }
-
-        let scale = max(bounds.width / image.size.width, bounds.height / image.size.height)
-        let drawSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
-        let drawRect = NSRect(
-            x: (bounds.width - drawSize.width) * 0.50,
-            y: (bounds.height - drawSize.height) * 0.46,
-            width: drawSize.width,
-            height: drawSize.height
-        )
-
-        NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(rect: bounds).addClip()
-        image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 0.88)
-        NSGraphicsContext.restoreGraphicsState()
-
-        NSColor(calibratedWhite: 0, alpha: 0.46).setFill()
-        bounds.fill()
-
-        let leftVignette = NSGradient(colors: [
-            NSColor(calibratedWhite: 0, alpha: 0.74),
-            NSColor(calibratedWhite: 0, alpha: 0.30),
-            NSColor(calibratedWhite: 0, alpha: 0.08),
-        ])
-        leftVignette?.draw(in: bounds, angle: 0)
-
-        let rightLight = NSGradient(colors: [
-            NSColor(calibratedWhite: 0.85, alpha: 0.10),
-            NSColor(calibratedWhite: 0.22, alpha: 0.08),
-            NSColor.clear,
-        ])
-        rightLight?.draw(
-            in: NSRect(x: bounds.width * 0.56, y: bounds.height * 0.24, width: bounds.width * 0.54, height: bounds.height * 0.44),
-            relativeCenterPosition: NSPoint(x: 0.38, y: 0.04)
-        )
-    }
-
-    private func drawFrequencyMotif() {
-        drawBackgroundLabel("FREQUENCY", x: 60, y: bounds.height - 180, alpha: 0.36)
-        drawBackgroundLabel("Y -\n0.00", x: 58, y: bounds.height - 420, alpha: 0.28)
-        drawBackgroundLabel("- X\n100.00", x: bounds.width * 0.38, y: bounds.height - 205, alpha: 0.26)
-        drawBackgroundLabel("X - 0.00", x: bounds.width * 0.36, y: 86, alpha: 0.25)
-        drawBackgroundLabel("- Y\n100.00", x: bounds.width - 220, y: bounds.height - 420, alpha: 0.18)
-
-        drawWave(
-            in: NSRect(x: bounds.width * 0.30, y: bounds.height - 275, width: 170, height: 88),
-            color: NSColor(calibratedWhite: 0.82, alpha: 0.46),
-            dashAlpha: 0.16
-        )
-        drawSignalBeam(y: bounds.height - 360)
-        drawWave(
-            in: NSRect(x: bounds.width * 0.30, y: bounds.height - 445, width: 170, height: 88),
-            color: NSColor(calibratedRed: 0.94, green: 0, blue: 0.1, alpha: 0.56),
-            dashAlpha: 0.22
-        )
-        drawWave(
-            in: NSRect(x: bounds.width * 0.30, y: bounds.height - 605, width: 170, height: 88),
-            color: NSColor(calibratedWhite: 0.78, alpha: 0.22),
-            dashAlpha: 0.08
-        )
-    }
-
-    private func drawSignalBeam(y: CGFloat) {
-        let glow = NSGradient(colors: [
-            NSColor(calibratedRed: 0.96, green: 0, blue: 0.08, alpha: 0.0),
-            NSColor(calibratedRed: 0.96, green: 0, blue: 0.08, alpha: 0.30),
-            NSColor(calibratedRed: 0.96, green: 0, blue: 0.08, alpha: 0.0),
-        ])
-        glow?.draw(in: NSRect(x: 0, y: y - 18, width: bounds.width * 0.72, height: 42), angle: 0)
-
-        for offset in [-8.0, -3.0, 4.0, 10.0] {
-            let line = NSBezierPath()
-            line.move(to: NSPoint(x: 0, y: y + offset))
-            line.curve(
-                to: NSPoint(x: bounds.width * 0.56, y: y + offset * 0.18),
-                controlPoint1: NSPoint(x: bounds.width * 0.20, y: y + offset * 1.4),
-                controlPoint2: NSPoint(x: bounds.width * 0.36, y: y - offset * 0.8)
-            )
-            NSColor(calibratedRed: 0.94, green: 0, blue: 0.08, alpha: 0.12).setStroke()
-            line.lineWidth = 1
-            line.stroke()
-        }
-    }
-
-    private func drawWave(in rect: NSRect, color: NSColor, dashAlpha: CGFloat) {
-        let baseline = NSBezierPath()
-        baseline.move(to: NSPoint(x: rect.minX, y: rect.midY))
-        baseline.line(to: NSPoint(x: rect.maxX, y: rect.midY))
-        baseline.setLineDash([4, 4], count: 2, phase: 0)
-        NSColor(calibratedWhite: 1, alpha: dashAlpha).setStroke()
-        baseline.lineWidth = 0.8
-        baseline.stroke()
-
-        let path = NSBezierPath()
-        let steps = 80
-        for index in 0...steps {
-            let progress = CGFloat(index) / CGFloat(steps)
-            let x = rect.minX + progress * rect.width
-            let y = rect.midY + sin(progress * .pi * 4) * rect.height * 0.36
-            if index == 0 {
-                path.move(to: NSPoint(x: x, y: y))
-            } else {
-                path.line(to: NSPoint(x: x, y: y))
-            }
-        }
-        color.setStroke()
-        path.lineWidth = 1.5
-        path.stroke()
-    }
-
-    private func drawBackgroundLabel(_ text: String, x: CGFloat, y: CGFloat, alpha: CGFloat) {
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: NSColor(calibratedWhite: 0.86, alpha: alpha),
-            .kern: 2.0,
-        ]
-        NSString(string: text).draw(at: NSPoint(x: x, y: y), withAttributes: attributes)
-    }
-
-    private func drawGrain() {
-        NSColor(calibratedWhite: 1, alpha: 0.018).setFill()
-        for index in 0..<180 {
-            let x = CGFloat((index * 47) % Int(max(bounds.width, 1)))
-            let y = CGFloat((index * 83) % Int(max(bounds.height, 1)))
-            NSBezierPath(rect: NSRect(x: x, y: y, width: 1, height: 1)).fill()
+        color.setFill()
+        // Relative heights of the five bars, tallest in the middle.
+        let heights: [CGFloat] = [0.32, 0.62, 1.0, 0.62, 0.32]
+        let barWidth: CGFloat = 2.6
+        let gap = (bounds.width - barWidth * CGFloat(heights.count)) / CGFloat(heights.count - 1)
+        for (index, factor) in heights.enumerated() {
+            let h = bounds.height * factor
+            let x = CGFloat(index) * (barWidth + gap)
+            let rect = NSRect(x: x, y: (bounds.height - h) / 2, width: barWidth, height: h)
+            NSBezierPath(roundedRect: rect, xRadius: barWidth / 2, yRadius: barWidth / 2).fill()
         }
     }
 }
@@ -1090,8 +971,8 @@ final class SignalLineView: NSView {
 
         let signal = NSBezierPath()
         signal.move(to: NSPoint(x: 0, y: bounds.midY))
-        signal.line(to: NSPoint(x: bounds.width * 0.38, y: bounds.midY))
-        NSColor(calibratedRed: 0.9, green: 0.0, blue: 0.08, alpha: 0.9).setStroke()
+        signal.line(to: NSPoint(x: bounds.width * 0.30, y: bounds.midY))
+        NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 0.9).setStroke()
         signal.lineWidth = 1.4
         signal.stroke()
     }
