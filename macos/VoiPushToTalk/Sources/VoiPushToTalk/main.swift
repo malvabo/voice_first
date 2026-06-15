@@ -97,13 +97,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private var diagnosticsExpanded = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
+        // Run as a menu-bar accessory, not a regular Dock app. This keeps Voi
+        // from becoming the frontmost application, so the user's target app
+        // (Codex, Claude, an editor) stays focused and receives the paste.
+        NSApp.setActivationPolicy(.accessory)
         notes = loadRecordedNotes()
         makeApplicationMenu()
         makeMenu()
         installKeyMonitors()
+        // Posting the synthetic Cmd-V into another app requires Accessibility
+        // (Input Monitoring only covers capturing the hotkey). Prompt for it up
+        // front so the paste path isn't silently dropped later.
+        requestAccessibilityPermission()
         setStatus("Voi ready")
         showSetupWindow()
+    }
+
+    /// Asks macOS to add Voi to System Settings → Privacy & Security →
+    /// Accessibility, showing the system prompt if it has not been answered.
+    /// Returns the current trust state. The option key is referenced by its
+    /// stable string value to avoid Unmanaged<CFString> bridging differences
+    /// across Swift toolchains.
+    @discardableResult
+    private func requestAccessibilityPermission() -> Bool {
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -525,20 +543,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
 
-        if let targetApplication {
-            targetApplication.activate(options: [.activateAllWindows])
+        // Without Accessibility, CGEvent.post into another app is silently
+        // dropped — the note saves but nothing lands in the target. Guard
+        // explicitly and tell the user what to do instead of failing quietly.
+        guard AXIsProcessTrusted() else {
+            setStatus("Allow Accessibility")
+            shortcutLabel?.stringValue = "Text copied to clipboard. Enable Voi in System Settings → Privacy & Security → Accessibility to paste automatically."
+            requestAccessibilityPermission()
+            refreshPermissionStatus(eventTapActive: eventTap != nil)
+            showSetupWindow()
+            return
         }
 
+        // If we captured a target app that isn't Voi, bring it forward and wait
+        // until it is actually frontmost before posting Cmd-V — a fixed delay
+        // races against activation and drops the paste into the wrong app.
+        if let targetApplication, targetApplication.bundleIdentifier != Bundle.main.bundleIdentifier {
+            targetApplication.activate(options: [.activateAllWindows])
+            postPasteWhenFrontmost(target: targetApplication, attempt: 0)
+        } else {
+            postPasteKeystroke()
+        }
+    }
+
+    /// Polls (up to ~1s) until `target` is the frontmost app, then posts the
+    /// paste keystroke. Falls back to posting anyway on timeout.
+    private func postPasteWhenFrontmost(target: NSRunningApplication, attempt: Int) {
+        let maxAttempts = 20 // 20 × 50ms ≈ 1s ceiling
+        let isFrontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == target.bundleIdentifier
+        if isFrontmost || attempt >= maxAttempts {
+            postPasteKeystroke()
+            return
+        }
+        target.activate(options: [.activateAllWindows])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.postPasteWhenFrontmost(target: target, attempt: attempt + 1)
+        }
+    }
+
+    private func postPasteKeystroke() {
         let source = CGEventSource(stateID: .hidSystemState)
         let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)
         let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
         keyDown?.flags = .maskCommand
         keyUp?.flags = .maskCommand
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-            keyDown?.post(tap: .cghidEventTap)
-            keyUp?.post(tap: .cghidEventTap)
-        }
+        keyDown?.post(tap: .cghidEventTap)
+        keyUp?.post(tap: .cghidEventTap)
     }
 
     private func setStatus(_ message: String) {
@@ -588,7 +638,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         window.titlebarAppearsTransparent = true
         window.center()
         window.isReleasedWhenClosed = false
-        window.level = .floating
+        // A normal window level: the dashboard shouldn't float above the app
+        // the user is dictating into.
+        window.level = .normal
         window.collectionBehavior = [.moveToActiveSpace]
 
         let content = DashboardBackgroundView(frame: window.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 820, height: 600))
@@ -1121,7 +1173,7 @@ private func polish(_ raw: String) -> String {
 }
 
 let app = NSApplication.shared
-app.setActivationPolicy(.regular)
+app.setActivationPolicy(.accessory)
 let delegate = AppDelegate()
 app.delegate = delegate
 app.run()

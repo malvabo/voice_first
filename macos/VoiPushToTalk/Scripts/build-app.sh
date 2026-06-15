@@ -38,6 +38,21 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-codesign --force --deep --sign - "$APP"
+# Sign with a stable identity if one is available. macOS ties Accessibility /
+# Input Monitoring grants to the app's code signature; ad-hoc signing changes
+# that signature on every build, so previously granted permissions are revoked
+# and must be re-added each time. A persistent self-signed identity keeps the
+# grants alive across rebuilds. Create one once with Scripts/create-signing-cert.sh
+# (or point VOI_SIGN_IDENTITY at your own identity).
+IDENTITY="${VOI_SIGN_IDENTITY:-Voi Code Signing}"
+if security find-identity -v -p codesigning 2>/dev/null | grep -qF "$IDENTITY"; then
+  echo "Signing with stable identity: $IDENTITY"
+  codesign --force --sign "$IDENTITY" "$APP"
+else
+  echo "warning: '$IDENTITY' not found — signing ad-hoc."
+  echo "         Accessibility/Input Monitoring permissions will reset on each rebuild."
+  echo "         Run Scripts/create-signing-cert.sh once for a stable identity."
+  codesign --force --sign - "$APP"
+fi
 
 echo "$APP"
