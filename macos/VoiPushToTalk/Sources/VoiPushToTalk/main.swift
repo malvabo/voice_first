@@ -66,8 +66,8 @@ private enum ChipState {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegate {
     private let bgColor = NSColor(calibratedRed: 0.043, green: 0.045, blue: 0.052, alpha: 1)
-    private let panelColor = NSColor(calibratedWhite: 0.12, alpha: 0.55)
-    private let borderColor = NSColor(calibratedWhite: 1, alpha: 0.10)
+    private let panelColor = NSColor(calibratedWhite: 0.12, alpha: 0.34)
+    private let borderColor = NSColor(calibratedWhite: 1, alpha: 0.08)
     private let primaryTextColor = NSColor(calibratedWhite: 0.93, alpha: 1)
     private let secondaryTextColor = NSColor(calibratedWhite: 0.62, alpha: 1)
     private let mutedTextColor = NSColor(calibratedWhite: 0.45, alpha: 1)
@@ -197,10 +197,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         button.bezelStyle = .regularSquare
         button.alignment = .center
         button.wantsLayer = true
-        button.layer?.cornerRadius = 9
+        button.layer?.cornerRadius = 8
         button.layer?.borderWidth = 1
         button.layer?.borderColor = (accent ? NSColor.clear : borderColor).cgColor
-        button.layer?.backgroundColor = (accent ? accentColor : panelColor).cgColor
+        button.layer?.backgroundColor = (accent ? accentColor.withAlphaComponent(0.92) : NSColor(calibratedWhite: 1, alpha: 0.055)).cgColor
         button.attributedTitle = NSAttributedString(
             string: button.title,
             attributes: [
@@ -222,14 +222,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private func styleTextField(_ input: NSTextField) {
         input.font = .systemFont(ofSize: 13, weight: .regular)
         input.textColor = primaryTextColor
-        input.backgroundColor = NSColor(calibratedWhite: 0.02, alpha: 0.55)
+        input.backgroundColor = NSColor(calibratedWhite: 0.02, alpha: 0.32)
         input.isBezeled = false
         input.focusRingType = .none
         input.wantsLayer = true
-        input.layer?.cornerRadius = 9
+        input.layer?.cornerRadius = 8
         input.layer?.borderWidth = 1
         input.layer?.borderColor = borderColor.cgColor
-        input.layer?.backgroundColor = NSColor(calibratedWhite: 0.02, alpha: 0.55).cgColor
+        input.layer?.backgroundColor = NSColor(calibratedWhite: 0.02, alpha: 0.32).cgColor
     }
 
     private func styleScrollView(_ scrollView: NSScrollView, textView: NSTextView, mono: Bool = false) {
@@ -237,7 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
         scrollView.wantsLayer = true
-        scrollView.layer?.cornerRadius = 12
+        scrollView.layer?.cornerRadius = 10
         scrollView.layer?.borderWidth = 1
         scrollView.layer?.borderColor = borderColor.cgColor
         scrollView.layer?.backgroundColor = panelColor.cgColor
@@ -262,7 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         chip.layer?.cornerRadius = frame.height / 2
         chip.layer?.borderWidth = 1
         chip.layer?.borderColor = borderColor.cgColor
-        chip.layer?.backgroundColor = NSColor(calibratedWhite: 0.03, alpha: 0.5).cgColor
+        chip.layer?.backgroundColor = NSColor(calibratedWhite: 0.03, alpha: 0.28).cgColor
         return chip
     }
 
@@ -751,25 +751,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.autoresizingMask = [.width, .height]
         window.contentView = content
 
-        let sidebar = SidebarView(frame: NSRect(x: 0, y: 0, width: 272, height: 600), fill: panelColor, line: borderColor)
+        let sidebar = SidebarView(
+            frame: NSRect(x: 0, y: 0, width: 272, height: 600),
+            fill: NSColor(calibratedWhite: 0.02, alpha: 0.30),
+            line: NSColor(calibratedWhite: 1, alpha: 0.045)
+        )
         sidebar.autoresizingMask = [.height]
         content.addSubview(sidebar)
 
         let logo = WaveMarkView(frame: NSRect(x: 20, y: 556, width: 30, height: 26), color: accentColor)
         content.addSubview(logo)
 
-        let brand = uiLabel("Voi", size: 20, weight: .bold)
+        let brand = uiLabel("Voi", size: 18, weight: .semibold)
         brand.frame = NSRect(x: 56, y: 553, width: 150, height: 30)
         content.addSubview(brand)
 
-        let status = uiLabel("Ready", size: 12.5, weight: .medium, color: primaryTextColor)
+        let status = uiLabel("Ready", size: 12, weight: .medium, color: primaryTextColor)
         status.frame = NSRect(x: 20, y: 510, width: 232, height: 32)
         status.alignment = .center
         status.wantsLayer = true
-        status.layer?.cornerRadius = 8
+        status.layer?.cornerRadius = 7
         status.layer?.borderWidth = 1
         status.layer?.borderColor = borderColor.cgColor
-        status.layer?.backgroundColor = NSColor(calibratedWhite: 0.03, alpha: 0.5).cgColor
+        status.layer?.backgroundColor = NSColor(calibratedWhite: 0.03, alpha: 0.24).cgColor
         content.addSubview(status)
         statusLabel = status
 
@@ -844,7 +848,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         let mainX: CGFloat = 296
         let mainW: CGFloat = 500
 
-        let title = uiLabel("Voi is ready", size: 25, weight: .bold)
+        let title = uiLabel("Ready", size: 23, weight: .semibold)
         title.frame = NSRect(x: mainX, y: 548, width: mainW, height: 34)
         content.addSubview(title)
         titleLabel = title
@@ -1144,23 +1148,7 @@ final class DashboardBackgroundView: NSView {
         bounds.fill()
 
         drawPhotoBackground()
-        drawFrequencyMotif()
         drawGrain()
-
-        NSColor(calibratedWhite: 1, alpha: 0.06).setFill()
-        let startX = bounds.width - 156
-        let startY = 78.0
-        for row in 0..<4 {
-            for col in 0..<5 {
-                let dot = NSRect(
-                    x: startX + CGFloat(col) * 22,
-                    y: startY + CGFloat(row) * 22,
-                    width: 2,
-                    height: 2
-                )
-                NSBezierPath(ovalIn: dot).fill()
-            }
-        }
     }
 
     private func drawPhotoBackground() {
@@ -1185,16 +1173,16 @@ final class DashboardBackgroundView: NSView {
 
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(rect: bounds).addClip()
-        image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 0.88)
+        image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 0.52)
         NSGraphicsContext.restoreGraphicsState()
 
-        NSColor(calibratedWhite: 0, alpha: 0.46).setFill()
+        NSColor(calibratedWhite: 0, alpha: 0.62).setFill()
         bounds.fill()
 
         let leftVignette = NSGradient(colors: [
-            NSColor(calibratedWhite: 0, alpha: 0.74),
-            NSColor(calibratedWhite: 0, alpha: 0.30),
-            NSColor(calibratedWhite: 0, alpha: 0.08),
+            NSColor(calibratedWhite: 0, alpha: 0.78),
+            NSColor(calibratedWhite: 0, alpha: 0.32),
+            NSColor(calibratedWhite: 0, alpha: 0.10),
         ])
         leftVignette?.draw(in: bounds, angle: 0)
 
@@ -1209,91 +1197,9 @@ final class DashboardBackgroundView: NSView {
         )
     }
 
-    private func drawFrequencyMotif() {
-        drawBackgroundLabel("FREQUENCY", x: 60, y: bounds.height - 180, alpha: 0.36)
-        drawBackgroundLabel("Y -\n0.00", x: 58, y: bounds.height - 420, alpha: 0.28)
-        drawBackgroundLabel("- X\n100.00", x: bounds.width * 0.38, y: bounds.height - 205, alpha: 0.26)
-        drawBackgroundLabel("X - 0.00", x: bounds.width * 0.36, y: 86, alpha: 0.25)
-        drawBackgroundLabel("- Y\n100.00", x: bounds.width - 220, y: bounds.height - 420, alpha: 0.18)
-
-        drawWave(
-            in: NSRect(x: bounds.width * 0.30, y: bounds.height - 275, width: 170, height: 88),
-            color: NSColor(calibratedWhite: 0.82, alpha: 0.46),
-            dashAlpha: 0.16
-        )
-        drawSignalBeam(y: bounds.height - 360)
-        drawWave(
-            in: NSRect(x: bounds.width * 0.30, y: bounds.height - 445, width: 170, height: 88),
-            color: NSColor(calibratedRed: 0.94, green: 0, blue: 0.1, alpha: 0.56),
-            dashAlpha: 0.22
-        )
-        drawWave(
-            in: NSRect(x: bounds.width * 0.30, y: bounds.height - 605, width: 170, height: 88),
-            color: NSColor(calibratedWhite: 0.78, alpha: 0.22),
-            dashAlpha: 0.08
-        )
-    }
-
-    private func drawSignalBeam(y: CGFloat) {
-        let glow = NSGradient(colors: [
-            NSColor(calibratedRed: 0.96, green: 0, blue: 0.08, alpha: 0.0),
-            NSColor(calibratedRed: 0.96, green: 0, blue: 0.08, alpha: 0.30),
-            NSColor(calibratedRed: 0.96, green: 0, blue: 0.08, alpha: 0.0),
-        ])
-        glow?.draw(in: NSRect(x: 0, y: y - 18, width: bounds.width * 0.72, height: 42), angle: 0)
-
-        for offset in [-8.0, -3.0, 4.0, 10.0] {
-            let line = NSBezierPath()
-            line.move(to: NSPoint(x: 0, y: y + offset))
-            line.curve(
-                to: NSPoint(x: bounds.width * 0.56, y: y + offset * 0.18),
-                controlPoint1: NSPoint(x: bounds.width * 0.20, y: y + offset * 1.4),
-                controlPoint2: NSPoint(x: bounds.width * 0.36, y: y - offset * 0.8)
-            )
-            NSColor(calibratedRed: 0.94, green: 0, blue: 0.08, alpha: 0.12).setStroke()
-            line.lineWidth = 1
-            line.stroke()
-        }
-    }
-
-    private func drawWave(in rect: NSRect, color: NSColor, dashAlpha: CGFloat) {
-        let baseline = NSBezierPath()
-        baseline.move(to: NSPoint(x: rect.minX, y: rect.midY))
-        baseline.line(to: NSPoint(x: rect.maxX, y: rect.midY))
-        baseline.setLineDash([4, 4], count: 2, phase: 0)
-        NSColor(calibratedWhite: 1, alpha: dashAlpha).setStroke()
-        baseline.lineWidth = 0.8
-        baseline.stroke()
-
-        let path = NSBezierPath()
-        let steps = 80
-        for index in 0...steps {
-            let progress = CGFloat(index) / CGFloat(steps)
-            let x = rect.minX + progress * rect.width
-            let y = rect.midY + sin(progress * .pi * 4) * rect.height * 0.36
-            if index == 0 {
-                path.move(to: NSPoint(x: x, y: y))
-            } else {
-                path.line(to: NSPoint(x: x, y: y))
-            }
-        }
-        color.setStroke()
-        path.lineWidth = 1.5
-        path.stroke()
-    }
-
-    private func drawBackgroundLabel(_ text: String, x: CGFloat, y: CGFloat, alpha: CGFloat) {
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: NSColor(calibratedWhite: 0.86, alpha: alpha),
-            .kern: 2.0,
-        ]
-        NSString(string: text).draw(at: NSPoint(x: x, y: y), withAttributes: attributes)
-    }
-
     private func drawGrain() {
-        NSColor(calibratedWhite: 1, alpha: 0.018).setFill()
-        for index in 0..<180 {
+        NSColor(calibratedWhite: 1, alpha: 0.010).setFill()
+        for index in 0..<90 {
             let x = CGFloat((index * 47) % Int(max(bounds.width, 1)))
             let y = CGFloat((index * 83) % Int(max(bounds.height, 1)))
             NSBezierPath(rect: NSRect(x: x, y: y, width: 1, height: 1)).fill()
