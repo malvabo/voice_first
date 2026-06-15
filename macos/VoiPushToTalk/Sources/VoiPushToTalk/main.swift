@@ -676,12 +676,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             window.contentView = content
 
             let label = uiLabel(status, size: 14, weight: .semibold, color: primaryTextColor)
-            label.frame = NSRect(x: 92, y: 52, width: 140, height: 22)
+            label.frame = NSRect(x: 102, y: 52, width: 128, height: 22)
             content.addSubview(label)
             recordingOverlayStatusLabel = label
 
             let sublabel = uiLabel("Release to paste", size: 11.5, weight: .regular, color: secondaryTextColor)
-            sublabel.frame = NSRect(x: 92, y: 31, width: 140, height: 18)
+            sublabel.frame = NSRect(x: 102, y: 31, width: 128, height: 18)
             content.addSubview(sublabel)
 
             recordingOverlayWindow = window
@@ -1550,14 +1550,24 @@ final class RecordingOverlayView: NSView {
         rounded.lineWidth = 1
         rounded.stroke()
 
+        let markRect = NSRect(x: 24, y: 22, width: 56, height: 56)
         accent.withAlphaComponent(0.16).setFill()
-        NSBezierPath(ovalIn: NSRect(x: 24, y: 28, width: 40, height: 40)).fill()
+        NSBezierPath(ovalIn: markRect).fill()
 
         accent.setFill()
         let heights: [CGFloat] = [10, 22, 34, 22, 10]
+        let barWidth: CGFloat = 3.2
+        let gap: CGFloat = 5.0
+        let totalWidth = CGFloat(heights.count) * barWidth + CGFloat(heights.count - 1) * gap
+        let startX = markRect.midX - totalWidth / 2
         for (index, height) in heights.enumerated() {
-            let rect = NSRect(x: 35 + CGFloat(index) * 6, y: bounds.midY - height / 2, width: 3, height: height)
-            NSBezierPath(roundedRect: rect, xRadius: 1.5, yRadius: 1.5).fill()
+            let rect = NSRect(
+                x: startX + CGFloat(index) * (barWidth + gap),
+                y: markRect.midY - height / 2,
+                width: barWidth,
+                height: height
+            )
+            NSBezierPath(roundedRect: rect, xRadius: barWidth / 2, yRadius: barWidth / 2).fill()
         }
     }
 }
