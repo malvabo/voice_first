@@ -86,6 +86,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private var fallbackHotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
     private var setupWindow: NSWindow?
+    private var recordingOverlayWindow: NSWindow?
+    private var recordingOverlayStatusLabel: NSTextField?
     private var keyField: NSTextField?
     private var statusLabel: NSTextField?
     private var titleLabel: NSTextField?
@@ -552,6 +554,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         guard UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty == false else {
             writeLog("recording blocked missingCartesiaKey")
             setStatus("Add Cartesia key")
+            showRecordingOverlay(status: "Add API key")
+            hideRecordingOverlay(after: 1.2)
             shortcutLabel?.stringValue = "Add your Cartesia key before recording."
             showSetupWindow()
             return false
@@ -562,11 +566,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             break
         case .notDetermined:
             writeLog("recording blocked micNotDetermined")
+            showRecordingOverlay(status: "Allow mic")
+            hideRecordingOverlay(after: 1.2)
             requestMicrophoneAccessOnce()
             return false
         case .denied, .restricted:
             writeLog("recording blocked micDenied")
             setStatus("Microphone blocked")
+            showRecordingOverlay(status: "Mic blocked")
+            hideRecordingOverlay(after: 1.2)
             shortcutLabel?.stringValue = "MICROPHONE_BLOCKED / ENABLE_IN_SYSTEM_SETTINGS"
             showSetupWindow()
             refreshPermissionStatus(eventTapActive: eventTap != nil)
@@ -601,6 +609,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             guard nextRecorder.record() else {
                 writeLog("recording failed recorderRecordFalse")
                 setStatus("Mic permission needed")
+                showRecordingOverlay(status: "Mic failed")
+                hideRecordingOverlay(after: 1.2)
                 shortcutLabel?.stringValue = "Microphone did not start recording."
                 recorder = nil
                 recordingURL = nil
@@ -613,11 +623,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             }
             writeLog("recording started url=\(url.path)")
             setStatus("Listening")
+            showRecordingOverlay(status: "Listening")
             shortcutLabel?.stringValue = "Listening. Release Option-Space to paste."
             return true
         } catch {
             writeLog("recording failed error=\(error.localizedDescription)")
             setStatus("Mic failed")
+            showRecordingOverlay(status: "Mic failed")
+            hideRecordingOverlay(after: 1.2)
             shortcutLabel?.stringValue = "Microphone failed: \(error.localizedDescription)"
             recorder = nil
             recordingURL = nil
@@ -631,6 +644,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             return nil
         }
         return frontmost
+    }
+
+    private func showRecordingOverlay(status: String) {
+        if recordingOverlayWindow == nil {
+            let size = NSSize(width: 260, height: 96)
+            let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+            let origin = NSPoint(
+                x: screenFrame.midX - size.width / 2,
+                y: screenFrame.minY + 86
+            )
+            let window = NSPanel(
+                contentRect: NSRect(origin: origin, size: size),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.hasShadow = true
+            window.level = .floating
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+            window.hidesOnDeactivate = false
+            window.ignoresMouseEvents = true
+
+            let content = RecordingOverlayView(frame: NSRect(origin: .zero, size: size), accent: accentColor)
+            content.autoresizingMask = [.width, .height]
+            window.contentView = content
+
+            let label = uiLabel(status, size: 14, weight: .semibold, color: primaryTextColor)
+            label.frame = NSRect(x: 92, y: 52, width: 140, height: 22)
+            content.addSubview(label)
+            recordingOverlayStatusLabel = label
+
+            let sublabel = uiLabel("Release to paste", size: 11.5, weight: .regular, color: secondaryTextColor)
+            sublabel.frame = NSRect(x: 92, y: 31, width: 140, height: 18)
+            content.addSubview(sublabel)
+
+            recordingOverlayWindow = window
+        }
+
+        updateRecordingOverlay(status: status)
+        recordingOverlayWindow?.alphaValue = 1
+        recordingOverlayWindow?.orderFront(nil)
+    }
+
+    private func updateRecordingOverlay(status: String) {
+        recordingOverlayStatusLabel?.stringValue = status
+    }
+
+    private func hideRecordingOverlay(after delay: TimeInterval = 0) {
+        let window = recordingOverlayWindow
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            window?.orderOut(nil)
+        }
     }
 
     private func requestMicrophoneAccessOnce() {
@@ -674,6 +741,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         }
         writeLog("recording stopped")
         setStatus("Polishing")
+        updateRecordingOverlay(status: "Polishing")
         shortcutLabel?.stringValue = "Option-Space released. Polishing..."
 
         guard let recordingURL else {
@@ -694,9 +762,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                     switch paste(text) {
                     case .pasted:
                         setStatus("Pasted")
+                        hideRecordingOverlay(after: 0.45)
                         shortcutLabel?.stringValue = "Pasted. Hold Option-Space for another note."
                     case .copiedNeedsAccessibility:
                         setStatus("Copied")
+                        updateRecordingOverlay(status: "Copied")
+                        hideRecordingOverlay(after: 0.9)
                         shortcutLabel?.stringValue = "Copied to clipboard. Auto-Paste is blocked by macOS Accessibility."
                     }
                 }
@@ -706,6 +777,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                 await MainActor.run {
                     writeLog("transcription failed error=\(error.localizedDescription)")
                     setStatus(error.localizedDescription)
+                    updateRecordingOverlay(status: "Failed")
+                    hideRecordingOverlay(after: 1.2)
                     shortcutLabel?.stringValue = "Transcription failed: \(error.localizedDescription)"
                 }
             }
@@ -1422,6 +1495,39 @@ final class WaveMarkView: NSView {
                 height: height
             )
             NSBezierPath(roundedRect: rect, xRadius: barWidth / 2, yRadius: barWidth / 2).fill()
+        }
+    }
+}
+
+final class RecordingOverlayView: NSView {
+    private let accent: NSColor
+
+    init(frame: NSRect, accent: NSColor) {
+        self.accent = accent
+        super.init(frame: frame)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var isFlipped: Bool { false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let rounded = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 18, yRadius: 18)
+        NSColor(calibratedWhite: 0.025, alpha: 0.86).setFill()
+        rounded.fill()
+
+        NSColor(calibratedWhite: 1, alpha: 0.10).setStroke()
+        rounded.lineWidth = 1
+        rounded.stroke()
+
+        accent.withAlphaComponent(0.16).setFill()
+        NSBezierPath(ovalIn: NSRect(x: 24, y: 28, width: 40, height: 40)).fill()
+
+        accent.setFill()
+        let heights: [CGFloat] = [10, 22, 34, 22, 10]
+        for (index, height) in heights.enumerated() {
+            let rect = NSRect(x: 35 + CGFloat(index) * 6, y: bounds.midY - height / 2, width: 3, height: height)
+            NSBezierPath(roundedRect: rect, xRadius: 1.5, yRadius: 1.5).fill()
         }
     }
 }
