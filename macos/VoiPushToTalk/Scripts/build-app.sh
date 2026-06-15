@@ -38,6 +38,19 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-codesign --force --deep --sign - "$APP"
+IDENTITY="${VOI_SIGN_IDENTITY:-}"
+if [[ -z "$IDENTITY" ]]; then
+  IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(.*\)".*/\1/p' | head -n 1)"
+fi
+
+if [[ -n "$IDENTITY" ]]; then
+  echo "Signing with stable identity: $IDENTITY"
+  codesign --force --sign "$IDENTITY" "$APP"
+else
+  echo "warning: no valid code-signing identity found; signing ad-hoc."
+  echo "         macOS permissions can reset after rebuilds."
+  echo "         Install an Apple Development certificate or set VOI_SIGN_IDENTITY."
+  codesign --force --sign - "$APP"
+fi
 
 echo "$APP"
