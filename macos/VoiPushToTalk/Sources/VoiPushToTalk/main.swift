@@ -15,6 +15,7 @@ private let recordedNotesDefaultsKey = "voi.recordedNotes"
 private enum PasteResult {
     case pasted
     case copiedNeedsAccessibility
+    case copiedNoTarget
 }
 
 private func fourCharCode(_ value: String) -> OSType {
@@ -760,6 +761,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                 let text = try await transcribeAndPolish(fileURL: recordingURL)
                 await MainActor.run {
                     writeLog("transcription complete chars=\(text.count)")
+                    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        setStatus("Didn't catch that")
+                        updateRecordingOverlay(status: "Didn't catch that")
+                        hideRecordingOverlay(after: 1.2)
+                        shortcutLabel?.stringValue = "No speech detected. Hold fn/Globe a little longer and try again."
+                        return
+                    }
                     saveRecordedNote(text)
                     switch paste(text) {
                     case .pasted:
@@ -771,6 +779,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                         updateRecordingOverlay(status: "Copied")
                         hideRecordingOverlay(after: 0.9)
                         shortcutLabel?.stringValue = "Copied to clipboard. Auto-Paste is blocked by macOS Accessibility."
+                    case .copiedNoTarget:
+                        setStatus("Copied")
+                        updateRecordingOverlay(status: "Copied")
+                        hideRecordingOverlay(after: 0.9)
+                        shortcutLabel?.stringValue = "Copied. Click into another app before dictating to auto-paste."
                     }
                 }
                 try? await Task.sleep(for: .milliseconds(1200))
@@ -837,16 +850,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
 
+        guard let targetApplication,
+              targetApplication.bundleIdentifier != Bundle.main.bundleIdentifier else {
+            writeLog("paste copiedOnly reason=noExternalTarget chars=\(text.count)")
+            return .copiedNoTarget
+        }
+
         guard AXIsProcessTrusted() else {
             writeLog("paste copiedOnly ax=false chars=\(text.count)")
             refreshPermissionStatus(eventTapActive: eventTap != nil)
             return .copiedNeedsAccessibility
         }
 
-        writeLog("paste posting target=\(targetApplication?.bundleIdentifier ?? "none") chars=\(text.count)")
-        if let targetApplication {
-            targetApplication.activate(options: [.activateAllWindows])
-        }
+        writeLog("paste posting target=\(targetApplication.bundleIdentifier ?? "unknown") chars=\(text.count)")
+        targetApplication.activate(options: [.activateAllWindows])
 
         let source = CGEventSource(stateID: .hidSystemState)
         let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)
@@ -1008,7 +1025,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.addSubview(saveButton)
 
         let autoPasteButton = makeButton(
-            title: "Enable Auto-Paste",
+            title: AXIsProcessTrusted() ? "Auto-Paste on" : "Enable Auto-Paste",
             frame: NSRect(x: 20, y: 218, width: 232, height: 30),
             action: #selector(enableAutoPaste),
             accent: !AXIsProcessTrusted()
@@ -1059,37 +1076,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.addSubview(subtitle)
         subtitleLabel = subtitle
 
-        let composerScroll = NSScrollView(frame: NSRect(x: mainX, y: 300, width: mainW, height: 200))
+        let composerScroll = NSScrollView(frame: NSRect(x: mainX, y: 332, width: mainW, height: 152))
         let composerView = NSTextView(frame: composerScroll.bounds)
         styleScrollView(composerScroll, textView: composerView)
         composerView.font = .systemFont(ofSize: 17, weight: .regular)
+        composerView.isSelectable = false
         composerView.textContainerInset = NSSize(width: 18, height: 16)
         composerScroll.documentView = composerView
         content.addSubview(composerScroll)
         composerTextView = composerView
 
         let shortcut = uiLabel("Waiting for fn/Globe.", size: 12.5, weight: .regular, color: secondaryTextColor)
-        shortcut.frame = NSRect(x: mainX, y: 266, width: 380, height: 20)
+        shortcut.frame = NSRect(x: mainX, y: 294, width: 380, height: 20)
         content.addSubview(shortcut)
         shortcutLabel = shortcut
 
         let copyButton = makeButton(
             title: "Copy",
-            frame: NSRect(x: mainX + mainW - 92, y: 262, width: 92, height: 30),
+            frame: NSRect(x: mainX + mainW - 92, y: 290, width: 92, height: 30),
             action: #selector(copyLatestNote)
         )
         content.addSubview(copyButton)
 
         let hotKeyDiagnostics = uiLabel(hotKeyDiagnosticsMessage, size: 11, weight: .regular, color: mutedTextColor)
-        hotKeyDiagnostics.frame = NSRect(x: mainX, y: 244, width: mainW, height: 18)
+        hotKeyDiagnostics.frame = NSRect(x: mainX, y: 270, width: mainW, height: 18)
         content.addSubview(hotKeyDiagnostics)
         hotKeyDiagnosticsLabel = hotKeyDiagnostics
 
         let notesLabel = uiLabel("Recorded notes", size: 12, weight: .semibold, color: secondaryTextColor)
-        notesLabel.frame = NSRect(x: mainX, y: 226, width: 220, height: 18)
+        notesLabel.frame = NSRect(x: mainX, y: 244, width: 220, height: 18)
         content.addSubview(notesLabel)
 
-        let scrollView = NSScrollView(frame: NSRect(x: mainX, y: 52, width: mainW, height: 162))
+        let scrollView = NSScrollView(frame: NSRect(x: mainX, y: 52, width: mainW, height: 180))
         let textView = NSTextView(frame: scrollView.bounds)
         styleScrollView(scrollView, textView: textView)
         scrollView.documentView = textView
@@ -1098,7 +1116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         notesTextView = textView
         refreshNotesView()
 
-        let eventScrollView = NSScrollView(frame: NSRect(x: mainX, y: 52, width: mainW, height: 162))
+        let eventScrollView = NSScrollView(frame: NSRect(x: mainX, y: 52, width: mainW, height: 180))
 
         let eventTextView = NSTextView(frame: eventScrollView.bounds)
         styleScrollView(eventScrollView, textView: eventTextView, mono: true)
@@ -1112,6 +1130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         setupWindow = window
         if activate {
             window.makeKeyAndOrderFront(nil)
+            window.makeFirstResponder(nil)
         } else {
             window.orderOut(nil)
         }
@@ -1308,6 +1327,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         case .copiedNeedsAccessibility:
             setStatus("Copied")
             shortcutLabel?.stringValue = "Test copied. Auto-Paste is blocked by macOS Accessibility."
+        case .copiedNoTarget:
+            setStatus("Copied")
+            shortcutLabel?.stringValue = "Test copied. Voi will not paste into its own dashboard."
         }
     }
 
