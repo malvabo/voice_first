@@ -82,7 +82,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private var targetApplication: NSRunningApplication?
     private var eventTap: CFMachPort?
     private var eventTapSource: CFRunLoopSource?
-    private var hotKeyRef: EventHotKeyRef?
+    private var primaryHotKeyRef: EventHotKeyRef?
+    private var fallbackHotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
     private var setupWindow: NSWindow?
     private var keyField: NSTextField?
@@ -124,8 +125,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         if let eventTap {
             CFMachPortInvalidate(eventTap)
         }
-        if let hotKeyRef {
-            UnregisterEventHotKey(hotKeyRef)
+        if let primaryHotKeyRef {
+            UnregisterEventHotKey(primaryHotKeyRef)
+        }
+        if let fallbackHotKeyRef {
+            UnregisterEventHotKey(fallbackHotKeyRef)
         }
         if let hotKeyHandler {
             RemoveEventHandler(hotKeyHandler)
@@ -307,16 +311,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                     nil,
                     &hotKeyID
                 )
-                guard status == noErr, hotKeyID.id == 1 else { return noErr }
+                guard status == noErr, hotKeyID.signature == fourCharCode("Voi1") else { return noErr }
 
                 let app = Unmanaged<AppDelegate>.fromOpaque(userInfo).takeUnretainedValue()
                 let eventKind = GetEventKind(event)
                 Task { @MainActor in
+                    let shortcutName = app.hotKeyName(for: hotKeyID.id)
                     if eventKind == UInt32(kEventHotKeyPressed) {
-                        app.logHotKeyEvent("pressed")
+                        app.logHotKeyEvent("\(shortcutName) pressed")
                         app.handlePushToTalkKeyChange(true)
                     } else if eventKind == UInt32(kEventHotKeyReleased) {
-                        app.logHotKeyEvent("released")
+                        app.logHotKeyEvent("\(shortcutName) released")
                         app.handlePushToTalkKeyChange(false)
                     }
                 }
@@ -334,22 +339,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             return
         }
 
-        let hotKeyID = EventHotKeyID(signature: fourCharCode("Voi1"), id: 1)
-        let registerStatus = RegisterEventHotKey(
-            UInt32(kVK_Space),
-            UInt32(optionKey),
+        let primaryStatus = registerHotKey(
+            id: 1,
+            keyCode: UInt32(kVK_Space),
+            modifiers: UInt32(optionKey),
+            ref: &primaryHotKeyRef
+        )
+        let fallbackStatus = registerHotKey(
+            id: 2,
+            keyCode: UInt32(kVK_Space),
+            modifiers: UInt32(optionKey | controlKey),
+            ref: &fallbackHotKeyRef
+        )
+
+        updateHotKeyDiagnostics(registrationSummary(primaryStatus: primaryStatus, fallbackStatus: fallbackStatus))
+
+        if primaryHotKeyRef == nil && fallbackHotKeyRef == nil {
+            setStatus("Shortcut unavailable")
+        }
+    }
+
+    private func registerHotKey(id: UInt32, keyCode: UInt32, modifiers: UInt32, ref: inout EventHotKeyRef?) -> OSStatus {
+        let hotKeyID = EventHotKeyID(signature: fourCharCode("Voi1"), id: id)
+        return RegisterEventHotKey(
+            keyCode,
+            modifiers,
             hotKeyID,
             GetApplicationEventTarget(),
             0,
-            &hotKeyRef
+            &ref
         )
+    }
 
-        if registerStatus == noErr {
-            updateHotKeyDiagnostics("Shortcut registered: Option-Space")
-        } else {
-            setStatus("Shortcut unavailable")
-            updateHotKeyDiagnostics(hotKeyFailureMessage(registerStatus))
+    private func hotKeyName(for id: UInt32) -> String {
+        id == 2 ? "Control-Option-Space" : "Option-Space"
+    }
+
+    private func registrationSummary(primaryStatus: OSStatus, fallbackStatus: OSStatus) -> String {
+        let primary = primaryHotKeyRef != nil
+            ? "Option-Space: registered"
+            : hotKeyFailureMessage(primaryStatus, shortcut: "Option-Space")
+        let fallback = fallbackHotKeyRef != nil
+            ? "Control-Option-Space: registered"
+            : hotKeyFailureMessage(fallbackStatus, shortcut: "Control-Option-Space")
+
+        if primaryHotKeyRef != nil && fallbackHotKeyRef != nil {
+            return "Shortcuts active: Option-Space + Control-Option-Space"
         }
+        if primaryHotKeyRef != nil {
+            return "\(primary); \(fallback)"
+        }
+        if fallbackHotKeyRef != nil {
+            return "\(primary); fallback active: Control-Option-Space"
+        }
+        return "\(primary); \(fallback)"
+    }
+
+    private var hasRegisteredHotKey: Bool {
+        primaryHotKeyRef != nil || fallbackHotKeyRef != nil
     }
 
     private func updateHotKeyDiagnostics(_ message: String) {
@@ -361,11 +408,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         refreshEventLog()
     }
 
-    private func hotKeyFailureMessage(_ status: OSStatus) -> String {
+    private func hotKeyFailureMessage(_ status: OSStatus, shortcut: String) -> String {
         if status == OSStatus(eventHotKeyExistsErr) {
-            return "Shortcut conflict: Option-Space is already registered by another app."
+            return "\(shortcut): conflict"
         }
-        return "Shortcut registration failed: \(status)"
+        if status == noErr {
+            return "\(shortcut): unavailable"
+        }
+        return "\(shortcut): failed \(status)"
     }
 
     private func logHotKeyEvent(_ phase: String) {
@@ -981,9 +1031,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         )
         updateChip(
             inputChip,
-            title: hotKeyRef != nil ? "Shortcut: active" : "Shortcut: blocked",
-            state: hotKeyRef != nil ? .success : .blocked
+            title: shortcutStatusTitle(),
+            state: hasRegisteredHotKey ? .success : .blocked
         )
+    }
+
+    private func shortcutStatusTitle() -> String {
+        switch (primaryHotKeyRef != nil, fallbackHotKeyRef != nil) {
+        case (true, true):
+            return "Shortcuts: active"
+        case (true, false):
+            return "Option-Space: active"
+        case (false, true):
+            return "Fallback: active"
+        case (false, false):
+            return "Shortcut: blocked"
+        }
     }
 
     @objc private func toggleDiagnostics() {
