@@ -702,7 +702,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
         if let setupWindow {
             setupWindow.makeKeyAndOrderFront(nil)
-            setupWindow.orderFrontRegardless()
             updateSetupCopy()
             refreshPermissionStatus(eventTapActive: eventTap != nil)
             return
@@ -719,8 +718,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         window.titlebarAppearsTransparent = true
         window.center()
         window.isReleasedWhenClosed = false
-        window.level = .floating
-        window.collectionBehavior = [.moveToActiveSpace]
+        window.level = .normal
 
         let content = DashboardBackgroundView(frame: window.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 760, height: 660))
         content.autoresizingMask = [.width, .height]
@@ -853,7 +851,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
         setupWindow = window
         window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
         updateSetupCopy()
         refreshPermissionStatus(eventTapActive: eventTap != nil)
         updateDiagnosticsVisibility()
