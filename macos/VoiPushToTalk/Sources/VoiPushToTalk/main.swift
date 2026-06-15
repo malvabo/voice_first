@@ -573,7 +573,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                         shortcutLabel?.stringValue = "Pasted. Hold Option-Space for another note."
                     case .copiedNeedsAccessibility:
                         setStatus("Copied")
-                        shortcutLabel?.stringValue = "Copied to clipboard. Enable Auto-Paste to insert automatically."
+                        shortcutLabel?.stringValue = "Copied to clipboard. Auto-Paste is blocked by macOS Accessibility."
                     }
                 }
                 try? await Task.sleep(for: .milliseconds(1200))
@@ -673,15 +673,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 
     @objc private func enableAutoPaste() {
-        let prompt = "AXTrustedCheckOptionPrompt"
-        let granted = AXIsProcessTrustedWithOptions([prompt: true] as CFDictionary)
+        let granted = AXIsProcessTrusted()
         refreshPermissionStatus(eventTapActive: eventTap != nil)
         if granted {
             setStatus("Auto-Paste enabled")
             shortcutLabel?.stringValue = "Auto-Paste is enabled."
         } else {
-            setStatus("Enable Auto-Paste")
-            shortcutLabel?.stringValue = "Grant Accessibility in System Settings, then try Test Paste."
+            setStatus("Auto-Paste blocked")
+            shortcutLabel?.stringValue = "Auto-Paste is still blocked. Re-add Voi in Accessibility, then reopen Voi."
+            openAccessibilitySettings()
+        }
+    }
+
+    private func openAccessibilitySettings() {
+        let urls = [
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+            "x-apple.systempreferences:com.apple.preference.security",
+        ]
+        for value in urls {
+            if let url = URL(string: value), NSWorkspace.shared.open(url) {
+                return
+            }
         }
     }
 
@@ -990,7 +1002,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             shortcutLabel?.stringValue = "Test pasted into the active app."
         case .copiedNeedsAccessibility:
             setStatus("Copied")
-            shortcutLabel?.stringValue = "Test copied. Enable Auto-Paste to insert automatically."
+            shortcutLabel?.stringValue = "Test copied. Auto-Paste is blocked by macOS Accessibility."
         }
     }
 
