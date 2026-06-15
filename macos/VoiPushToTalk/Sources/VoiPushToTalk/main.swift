@@ -102,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private var eventLogTextView: NSTextView?
     private var eventLogScrollView: NSScrollView?
     private var diagnosticsToggleButton: NSButton?
+    private var manualDictationButton: NSButton?
     private var recentEvents: [String] = []
     private var notes: [RecordedNote] = []
     private var hasRequestedMicrophoneThisSession = false
@@ -114,8 +115,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         makeApplicationMenu()
         makeMenu()
         installPushToTalkHotKey()
+        installKeyMonitors()
+        writeLog("launch team=\(Bundle.main.object(forInfoDictionaryKey: "TeamIdentifier") as? String ?? "unknown") ax=\(AXIsProcessTrusted())")
         setStatus("Voi ready")
-        showSetupWindow()
+        if shouldShowSetupWindowOnLaunch {
+            showSetupWindow(activate: true)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -399,7 +404,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         primaryHotKeyRef != nil || fallbackHotKeyRef != nil
     }
 
+    private var shouldShowSetupWindowOnLaunch: Bool {
+        UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty != false
+            || AVCaptureDevice.authorizationStatus(for: .audio) != .authorized
+            || !AXIsProcessTrusted()
+    }
+
+    nonisolated private func logFileURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/Voi.log")
+    }
+
+    private func writeLog(_ message: String) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        let line = "\(formatter.string(from: Date())) \(message)\n"
+        guard let data = line.data(using: .utf8) else { return }
+
+        let url = logFileURL()
+        if FileManager.default.fileExists(atPath: url.path),
+           let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+        } else {
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
     private func updateHotKeyDiagnostics(_ message: String) {
+        writeLog("hotkey registration \(message)")
         hotKeyDiagnosticsMessage = message
         shortcutLabel?.stringValue = message
         hotKeyDiagnosticsLabel?.stringValue = message
@@ -424,6 +458,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         recentEvents.insert("\(formatter.string(from: Date())) hotKey option+space \(phase)", at: 0)
         recentEvents = Array(recentEvents.prefix(20))
         refreshEventLog()
+        writeLog("hotkey \(phase)")
     }
 
     private func installKeyMonitors() {
@@ -461,6 +496,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             },
             userInfo: userInfo
         ) else {
+            writeLog("eventTap unavailable")
             setStatus("Allow Accessibility")
             refreshPermissionStatus(eventTapActive: false)
             return
@@ -472,6 +508,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             CFRunLoopAddSource(CFRunLoopGetMain(), eventTapSource, .commonModes)
         }
         CGEvent.tapEnable(tap: tap, enable: true)
+        writeLog("eventTap active")
         refreshPermissionStatus(eventTapActive: true)
     }
 
@@ -500,9 +537,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     fileprivate func handlePushToTalkKeyChange(_ isDown: Bool) {
         if isDown && !pushToTalkKeyDown {
             shortcutLabel?.stringValue = "Option-Space detected. Recording..."
+            writeLog("pushToTalk down")
             pushToTalkKeyDown = startRecording()
         } else if !isDown && pushToTalkKeyDown {
             pushToTalkKeyDown = false
+            writeLog("pushToTalk up")
             stopRecording()
         }
     }
@@ -511,6 +550,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private func startRecording() -> Bool {
         guard recorder == nil else { return true }
         guard UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty == false else {
+            writeLog("recording blocked missingCartesiaKey")
             setStatus("Add Cartesia key")
             shortcutLabel?.stringValue = "Add your Cartesia key before recording."
             showSetupWindow()
@@ -521,9 +561,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         case .authorized:
             break
         case .notDetermined:
+            writeLog("recording blocked micNotDetermined")
             requestMicrophoneAccessOnce()
             return false
         case .denied, .restricted:
+            writeLog("recording blocked micDenied")
             setStatus("Microphone blocked")
             shortcutLabel?.stringValue = "MICROPHONE_BLOCKED / ENABLE_IN_SYSTEM_SETTINGS"
             showSetupWindow()
@@ -536,6 +578,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         }
 
         targetApplication = currentPasteTarget()
+        writeLog("recording target=\(targetApplication?.bundleIdentifier ?? "none") ax=\(AXIsProcessTrusted())")
         if targetApplication == nil {
             shortcutLabel?.stringValue = "No target app captured. Click a text field, then hold Option-Space."
         }
@@ -556,6 +599,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             let nextRecorder = try AVAudioRecorder(url: url, settings: settings)
             nextRecorder.delegate = self
             guard nextRecorder.record() else {
+                writeLog("recording failed recorderRecordFalse")
                 setStatus("Mic permission needed")
                 shortcutLabel?.stringValue = "Microphone did not start recording."
                 recorder = nil
@@ -563,10 +607,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                 return false
             }
             recorder = nextRecorder
+            manualDictationButton?.title = "Stop dictation"
+            if let manualDictationButton {
+                styleButton(manualDictationButton, accent: true)
+            }
+            writeLog("recording started url=\(url.path)")
             setStatus("Listening")
             shortcutLabel?.stringValue = "Listening. Release Option-Space to paste."
             return true
         } catch {
+            writeLog("recording failed error=\(error.localizedDescription)")
             setStatus("Mic failed")
             shortcutLabel?.stringValue = "Microphone failed: \(error.localizedDescription)"
             recorder = nil
@@ -611,16 +661,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     private func stopRecording() {
         guard let recorder else {
+            writeLog("stop ignored noRecorder")
             shortcutLabel?.stringValue = "No active recording to transcribe."
             setStatus("Voi ready")
             return
         }
         recorder.stop()
         self.recorder = nil
+        manualDictationButton?.title = "Start dictation"
+        if let manualDictationButton {
+            styleButton(manualDictationButton)
+        }
+        writeLog("recording stopped")
         setStatus("Polishing")
         shortcutLabel?.stringValue = "Option-Space released. Polishing..."
 
         guard let recordingURL else {
+            writeLog("transcription skipped missingRecordingURL")
             setStatus("Voi ready")
             shortcutLabel?.stringValue = "Recording file was not created."
             return
@@ -629,8 +686,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         Task {
             defer { try? FileManager.default.removeItem(at: recordingURL) }
             do {
+                await MainActor.run { writeLog("transcription started file=\(recordingURL.path)") }
                 let text = try await transcribeAndPolish(fileURL: recordingURL)
                 await MainActor.run {
+                    writeLog("transcription complete chars=\(text.count)")
                     saveRecordedNote(text)
                     switch paste(text) {
                     case .pasted:
@@ -645,6 +704,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                 await MainActor.run { setStatus("Voi ready") }
             } catch {
                 await MainActor.run {
+                    writeLog("transcription failed error=\(error.localizedDescription)")
                     setStatus(error.localizedDescription)
                     shortcutLabel?.stringValue = "Transcription failed: \(error.localizedDescription)"
                 }
@@ -703,10 +763,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         NSPasteboard.general.setString(text, forType: .string)
 
         guard AXIsProcessTrusted() else {
+            writeLog("paste copiedOnly ax=false chars=\(text.count)")
             refreshPermissionStatus(eventTapActive: eventTap != nil)
             return .copiedNeedsAccessibility
         }
 
+        writeLog("paste posting target=\(targetApplication?.bundleIdentifier ?? "none") chars=\(text.count)")
         if let targetApplication {
             targetApplication.activate(options: [.activateAllWindows])
         }
@@ -730,15 +792,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 
     @objc private func showDashboard() {
-        showSetupWindow()
+        showSetupWindow(activate: true)
     }
 
     @objc private func setCartesiaKey() {
-        showSetupWindow()
+        showSetupWindow(activate: true)
     }
 
     @objc private func enableAutoPaste() {
         let granted = AXIsProcessTrusted()
+        writeLog("autoPaste check ax=\(granted)")
         refreshPermissionStatus(eventTapActive: eventTap != nil)
         if granted {
             setStatus("Auto-Paste enabled")
@@ -773,12 +836,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         setStatus("Cartesia key saved")
     }
 
-    private func showSetupWindow() {
-        NSApp.activate(ignoringOtherApps: true)
-        NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+    private func showSetupWindow(activate: Bool = true) {
+        if activate {
+            NSApp.activate(ignoringOtherApps: true)
+            NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        }
 
         if let setupWindow {
-            setupWindow.makeKeyAndOrderFront(nil)
+            if activate {
+                setupWindow.makeKeyAndOrderFront(nil)
+            }
             updateSetupCopy()
             refreshPermissionStatus(eventTapActive: eventTap != nil)
             return
@@ -887,6 +954,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         )
         content.addSubview(testButton)
 
+        let manualButton = makeButton(
+            title: "Start dictation",
+            frame: NSRect(x: 20, y: 134, width: 232, height: 30),
+            action: #selector(toggleManualDictation),
+            accent: false
+        )
+        content.addSubview(manualButton)
+        manualDictationButton = manualButton
+
         let diagnosticsButton = makeButton(
             title: "Show diagnostics",
             frame: NSRect(x: 20, y: 20, width: 232, height: 30),
@@ -959,7 +1035,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         refreshEventLog()
 
         setupWindow = window
-        window.makeKeyAndOrderFront(nil)
+        if activate {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            window.orderOut(nil)
+        }
         updateSetupCopy()
         refreshPermissionStatus(eventTapActive: eventTap != nil)
         updateDiagnosticsVisibility()
@@ -1118,6 +1198,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     @objc private func hideSetupWindow() {
         setupWindow?.orderOut(nil)
+    }
+
+    @objc private func toggleManualDictation() {
+        if recorder == nil {
+            writeLog("manual dictation start")
+            if startRecording() {
+                manualDictationButton?.title = "Stop dictation"
+                if let manualDictationButton {
+                    styleButton(manualDictationButton, accent: true)
+                }
+            }
+        } else {
+            writeLog("manual dictation stop")
+            manualDictationButton?.title = "Start dictation"
+            if let manualDictationButton {
+                styleButton(manualDictationButton)
+            }
+            stopRecording()
+        }
     }
 
     @objc private func testPaste() {
