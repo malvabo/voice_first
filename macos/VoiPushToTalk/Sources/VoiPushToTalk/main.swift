@@ -744,7 +744,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         }
         writeLog("recording stopped")
         setStatus("Polishing")
-        updateRecordingOverlay(status: "Polishing")
+        hideRecordingOverlay()
         shortcutLabel?.stringValue = "Released. Polishing..."
 
         guard let recordingURL else {
@@ -763,8 +763,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                     writeLog("transcription complete chars=\(text.count)")
                     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                         setStatus("Didn't catch that")
-                        updateRecordingOverlay(status: "Didn't catch that")
-                        hideRecordingOverlay(after: 1.2)
                         shortcutLabel?.stringValue = "No speech detected. Hold fn/Globe a little longer and try again."
                         return
                     }
@@ -772,17 +770,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                     switch paste(text) {
                     case .pasted:
                         setStatus("Pasted")
-                        hideRecordingOverlay(after: 0.45)
                         shortcutLabel?.stringValue = "Pasted. Hold fn/Globe for another note."
                     case .copiedNeedsAccessibility:
                         setStatus("Copied")
-                        updateRecordingOverlay(status: "Copied")
-                        hideRecordingOverlay(after: 0.9)
                         shortcutLabel?.stringValue = "Copied to clipboard. Auto-Paste is blocked by macOS Accessibility."
                     case .copiedNoTarget:
                         setStatus("Copied")
-                        updateRecordingOverlay(status: "Copied")
-                        hideRecordingOverlay(after: 0.9)
                         shortcutLabel?.stringValue = "Copied. Click into another app before dictating to auto-paste."
                     }
                 }
@@ -792,8 +785,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                 await MainActor.run {
                     writeLog("transcription failed error=\(error.localizedDescription)")
                     setStatus(error.localizedDescription)
-                    updateRecordingOverlay(status: "Failed")
-                    hideRecordingOverlay(after: 1.2)
                     shortcutLabel?.stringValue = "Transcription failed: \(error.localizedDescription)"
                 }
             }
