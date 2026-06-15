@@ -31,9 +31,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Voi records while you hold Option-Space so it can transcribe and paste your dictated text.</string>
+  <string>Voi records while you hold fn/Globe so it can transcribe and paste your dictated text.</string>
   <key>NSInputMonitoringUsageDescription</key>
-  <string>Voi listens for the Option-Space push-to-talk shortcut so it can record while held.</string>
+  <string>Voi listens for the fn/Globe push-to-talk shortcut so it can record while held.</string>
 </dict>
 </plist>
 PLIST

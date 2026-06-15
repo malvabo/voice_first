@@ -148,8 +148,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         statusItem.button?.title = "Voi"
 
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Hold Option-Space to dictate", action: nil, keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "fn/Globe is experimental", action: nil, keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Hold fn/Globe to dictate", action: nil, keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Option-Space is fallback", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Show Dashboard", action: #selector(showDashboard), keyEquivalent: "d"))
         menu.addItem(NSMenuItem(title: "Set Cartesia API Key...", action: #selector(setCartesiaKey), keyEquivalent: ","))
@@ -391,7 +391,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             : hotKeyFailureMessage(fallbackStatus, shortcut: "Control-Option-Space")
 
         if primaryHotKeyRef != nil && fallbackHotKeyRef != nil {
-            return "Shortcuts active: Option-Space + Control-Option-Space"
+            return "Fallback shortcuts active: Option-Space + Control-Option-Space"
         }
         if primaryHotKeyRef != nil {
             return "\(primary); \(fallback)"
@@ -457,7 +457,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private func logHotKeyEvent(_ phase: String) {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss.SSS"
-        recentEvents.insert("\(formatter.string(from: Date())) hotKey option+space \(phase)", at: 0)
+        recentEvents.insert("\(formatter.string(from: Date())) hotKey \(phase)", at: 0)
         recentEvents = Array(recentEvents.prefix(20))
         refreshEventLog()
         writeLog("hotkey \(phase)")
@@ -479,7 +479,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                 guard let userInfo else { return Unmanaged.passUnretained(event) }
                 let app = Unmanaged<AppDelegate>.fromOpaque(userInfo).takeUnretainedValue()
                 let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-                let isFunctionDown = event.flags.contains(.maskSecondaryFn)
                 Task { @MainActor in
                     app.logKeyEvent(type: type, keyCode: keyCode, flags: event.flags)
                     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
@@ -489,7 +488,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
                     switch type {
                     case .flagsChanged:
-                        app.handleFunctionFlagChange(isFunctionDown)
+                        app.handleFunctionFlagChange(app.isFunctionKeyDown(type: type, keyCode: keyCode, flags: event.flags))
                     default:
                         break
                     }
@@ -523,22 +522,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
         CGEvent.tapEnable(tap: eventTap, enable: true)
         refreshPermissionStatus(eventTapActive: true)
-        shortcutLabel?.stringValue = "INPUT_EVENTS_RESUMED / TRY_OPTION_SPACE_AGAIN"
+        shortcutLabel?.stringValue = "Input events resumed. Hold fn/Globe to dictate."
     }
 
-    fileprivate func handleFunctionFlagChange(_ isFunctionDown: Bool) {
+    private func isFunctionKeyDown(type: CGEventType, keyCode: Int64, flags: CGEventFlags) -> Bool? {
+        guard type == .flagsChanged else { return nil }
+        if flags.contains(.maskSecondaryFn) { return true }
+        if functionKeyDown && (keyCode == 63 || keyCode == 0) { return false }
+        if !functionKeyDown && keyCode == 63 { return true }
+        return nil
+    }
+
+    fileprivate func handleFunctionFlagChange(_ isFunctionDown: Bool?) {
+        guard let isFunctionDown else { return }
         if isFunctionDown && !functionKeyDown {
             shortcutLabel?.stringValue = "fn/Globe detected. Recording..."
+            writeLog("fn down")
             functionKeyDown = startRecording()
         } else if !isFunctionDown && functionKeyDown {
             functionKeyDown = false
+            writeLog("fn up")
             stopRecording()
         }
     }
 
     fileprivate func handlePushToTalkKeyChange(_ isDown: Bool) {
         if isDown && !pushToTalkKeyDown {
-            shortcutLabel?.stringValue = "Option-Space detected. Recording..."
+            shortcutLabel?.stringValue = "Fallback shortcut detected. Recording..."
             writeLog("pushToTalk down")
             pushToTalkKeyDown = startRecording()
         } else if !isDown && pushToTalkKeyDown {
@@ -588,7 +598,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         targetApplication = currentPasteTarget()
         writeLog("recording target=\(targetApplication?.bundleIdentifier ?? "none") ax=\(AXIsProcessTrusted())")
         if targetApplication == nil {
-            shortcutLabel?.stringValue = "No target app captured. Click a text field, then hold Option-Space."
+            shortcutLabel?.stringValue = "No target app captured. Click a text field, then hold fn/Globe."
         }
 
         let url = FileManager.default.temporaryDirectory
@@ -624,7 +634,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             writeLog("recording started url=\(url.path)")
             setStatus("Listening")
             showRecordingOverlay(status: "Listening")
-            shortcutLabel?.stringValue = "Listening. Release Option-Space to paste."
+            shortcutLabel?.stringValue = "Listening. Release fn/Globe to paste."
             return true
         } catch {
             writeLog("recording failed error=\(error.localizedDescription)")
@@ -716,7 +726,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                 self.refreshPermissionStatus(eventTapActive: self.eventTap != nil)
                 if granted {
                     self.setStatus("Voi ready")
-                    self.shortcutLabel?.stringValue = "MICROPHONE_ALLOWED / TRY_OPTION_SPACE_AGAIN"
+                    self.shortcutLabel?.stringValue = "Microphone allowed. Hold fn/Globe to dictate."
                 } else {
                     self.setStatus("Microphone blocked")
                     self.shortcutLabel?.stringValue = "MICROPHONE_BLOCKED / ENABLE_IN_SYSTEM_SETTINGS"
@@ -742,7 +752,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         writeLog("recording stopped")
         setStatus("Polishing")
         updateRecordingOverlay(status: "Polishing")
-        shortcutLabel?.stringValue = "Option-Space released. Polishing..."
+        shortcutLabel?.stringValue = "Released. Polishing..."
 
         guard let recordingURL else {
             writeLog("transcription skipped missingRecordingURL")
@@ -763,7 +773,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                     case .pasted:
                         setStatus("Pasted")
                         hideRecordingOverlay(after: 0.45)
-                        shortcutLabel?.stringValue = "Pasted. Hold Option-Space for another note."
+                        shortcutLabel?.stringValue = "Pasted. Hold fn/Globe for another note."
                     case .copiedNeedsAccessibility:
                         setStatus("Copied")
                         updateRecordingOverlay(status: "Copied")
@@ -861,7 +871,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     private func setStatus(_ message: String) {
         statusItem.button?.title = message == "Voi ready" ? "Voi" : "Voi: \(message)"
-        statusLabel?.stringValue = message == "Voi ready" ? "Ready — hold Option-Space" : message
+        statusLabel?.stringValue = message == "Voi ready" ? "Ready — hold fn/Globe" : message
     }
 
     @objc private func showDashboard() {
@@ -1052,7 +1062,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.addSubview(title)
         titleLabel = title
 
-        let subtitle = uiLabel("Hold Option-Space, speak, release to paste.", size: 13, weight: .regular, color: secondaryTextColor)
+        let subtitle = uiLabel("Hold fn/Globe, speak, release to paste.", size: 13, weight: .regular, color: secondaryTextColor)
         subtitle.frame = NSRect(x: mainX, y: 520, width: mainW, height: 22)
         content.addSubview(subtitle)
         subtitleLabel = subtitle
@@ -1066,7 +1076,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.addSubview(composerScroll)
         composerTextView = composerView
 
-        let shortcut = uiLabel("Waiting for Option-Space.", size: 12.5, weight: .regular, color: secondaryTextColor)
+        let shortcut = uiLabel("Waiting for fn/Globe.", size: 12.5, weight: .regular, color: secondaryTextColor)
         shortcut.frame = NSRect(x: mainX, y: 266, width: 380, height: 20)
         content.addSubview(shortcut)
         shortcutLabel = shortcut
@@ -1137,7 +1147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             setStatus("Cartesia key saved")
             keyField?.stringValue = ""
             keyField?.placeholderString = "Key saved. Paste a new key to replace."
-            shortcutLabel?.stringValue = "Key saved. Hold Option-Space to dictate."
+            shortcutLabel?.stringValue = "Key saved. Hold fn/Globe to dictate."
             updateSetupCopy()
         }
         refreshPermissionStatus(eventTapActive: eventTap != nil)
@@ -1147,11 +1157,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         let hasKey = UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty == false
         if hasKey {
             titleLabel?.stringValue = "Voi is ready"
-            subtitleLabel?.stringValue = "Hold Option-Space, speak, release to paste."
+            subtitleLabel?.stringValue = "Hold fn/Globe, speak, release to paste."
             statusLabel?.stringValue = "Ready"
         } else {
             titleLabel?.stringValue = "Set up Voi"
-            subtitleLabel?.stringValue = "Add your Cartesia key, then hold Option-Space to dictate."
+            subtitleLabel?.stringValue = "Add your Cartesia key, then hold fn/Globe to dictate."
             statusLabel?.stringValue = "Waiting for Cartesia API key"
         }
     }
@@ -1184,15 +1194,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         )
         updateChip(
             inputChip,
-            title: shortcutStatusTitle(),
-            state: hasRegisteredHotKey ? .success : .blocked
+            title: shortcutStatusTitle(eventTapActive: eventTapActive),
+            state: (eventTapActive || hasRegisteredHotKey) ? .success : .blocked
         )
     }
 
-    private func shortcutStatusTitle() -> String {
+    private func shortcutStatusTitle(eventTapActive: Bool) -> String {
+        if eventTapActive && hasRegisteredHotKey {
+            return "fn ready + fallback"
+        }
+        if eventTapActive {
+            return "fn/Globe: ready"
+        }
         switch (primaryHotKeyRef != nil, fallbackHotKeyRef != nil) {
         case (true, true):
-            return "Shortcuts: active"
+            return "Fallbacks: active"
         case (true, false):
             return "Option-Space: active"
         case (false, true):
@@ -1325,7 +1341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     private func refreshNotesView() {
         composerTextView?.string = notes.first?.text
-            ?? "Hold Option-Space and speak. Voi removes pauses, fixes changed thoughts, formats the text, and pastes it where you're typing."
+            ?? "Hold fn/Globe and speak. Voi removes pauses, fixes changed thoughts, formats the text, and pastes it where you're typing."
         composerTextView?.textColor = notes.first == nil ? mutedTextColor : primaryTextColor
 
         guard let notesTextView else { return }
