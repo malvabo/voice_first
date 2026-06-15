@@ -120,9 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         installKeyMonitors()
         writeLog("launch team=\(Bundle.main.object(forInfoDictionaryKey: "TeamIdentifier") as? String ?? "unknown") ax=\(AXIsProcessTrusted())")
         setStatus("Voi ready")
-        if shouldShowSetupWindowOnLaunch {
-            showSetupWindow(activate: true)
-        }
+        showSetupWindow(activate: true)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -404,12 +402,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     private var hasRegisteredHotKey: Bool {
         primaryHotKeyRef != nil || fallbackHotKeyRef != nil
-    }
-
-    private var shouldShowSetupWindowOnLaunch: Bool {
-        UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty != false
-            || AVCaptureDevice.authorizationStatus(for: .audio) != .authorized
-            || !AXIsProcessTrusted()
     }
 
     nonisolated private func logFileURL() -> URL {
