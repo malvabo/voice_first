@@ -948,29 +948,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.autoresizingMask = [.width, .height]
         window.contentView = content
 
-        let sidebar = SidebarView(
-            frame: NSRect(x: 0, y: 0, width: 272, height: 600),
-            fill: NSColor(calibratedWhite: 0.02, alpha: 0.30),
-            line: NSColor(calibratedWhite: 1, alpha: 0.045)
-        )
+        let sidebar = SidebarView(frame: NSRect(x: 0, y: 0, width: 272, height: 600), fill: panelColor, line: borderColor)
+        
         sidebar.autoresizingMask = [.height]
         content.addSubview(sidebar)
 
         let logo = WaveMarkView(frame: NSRect(x: 20, y: 556, width: 30, height: 26), color: accentColor)
         content.addSubview(logo)
 
-        let brand = uiLabel("Voi", size: 18, weight: .semibold)
+        let brand = uiLabel("Voi", size: 20, weight: .bold)
         brand.frame = NSRect(x: 56, y: 553, width: 150, height: 30)
         content.addSubview(brand)
 
-        let status = uiLabel("Ready", size: 12, weight: .medium, color: primaryTextColor)
+        let status = uiLabel("Ready", size: 12.5, weight: .medium, color: primaryTextColor)
         status.frame = NSRect(x: 20, y: 510, width: 232, height: 32)
         status.alignment = .center
         status.wantsLayer = true
-        status.layer?.cornerRadius = 7
+        status.layer?.cornerRadius = 8
         status.layer?.borderWidth = 1
         status.layer?.borderColor = borderColor.cgColor
-        status.layer?.backgroundColor = NSColor(calibratedWhite: 0.03, alpha: 0.24).cgColor
+        status.layer?.backgroundColor = NSColor(calibratedWhite: 0.03, alpha: 0.5).cgColor
         content.addSubview(status)
         statusLabel = status
 
@@ -1054,7 +1051,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         let mainX: CGFloat = 296
         let mainW: CGFloat = 500
 
-        let title = uiLabel("Ready", size: 23, weight: .semibold)
+        let title = uiLabel("Voi is ready", size: 25, weight: .bold)
         title.frame = NSRect(x: mainX, y: 548, width: mainW, height: 34)
         content.addSubview(title)
         titleLabel = title
@@ -1064,7 +1061,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.addSubview(subtitle)
         subtitleLabel = subtitle
 
-        let composerScroll = NSScrollView(frame: NSRect(x: mainX, y: 332, width: mainW, height: 152))
+        let composerScroll = NSScrollView(frame: NSRect(x: mainX, y: 300, width: mainW, height: 200))
         let composerView = NSTextView(frame: composerScroll.bounds)
         styleScrollView(composerScroll, textView: composerView)
         composerView.font = .systemFont(ofSize: 17, weight: .regular)
@@ -1075,27 +1072,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         composerTextView = composerView
 
         let shortcut = uiLabel("Waiting for fn/Globe.", size: 12.5, weight: .regular, color: secondaryTextColor)
-        shortcut.frame = NSRect(x: mainX, y: 294, width: 380, height: 20)
+        shortcut.frame = NSRect(x: mainX, y: 266, width: 380, height: 20)
         content.addSubview(shortcut)
         shortcutLabel = shortcut
 
         let copyButton = makeButton(
             title: "Copy",
-            frame: NSRect(x: mainX + mainW - 92, y: 290, width: 92, height: 30),
+            frame: NSRect(x: mainX + mainW - 92, y: 262, width: 92, height: 30),
             action: #selector(copyLatestNote)
         )
         content.addSubview(copyButton)
 
-        let hotKeyDiagnostics = uiLabel(hotKeyDiagnosticsMessage, size: 11, weight: .regular, color: mutedTextColor)
-        hotKeyDiagnostics.frame = NSRect(x: mainX, y: 270, width: mainW, height: 18)
-        content.addSubview(hotKeyDiagnostics)
-        hotKeyDiagnosticsLabel = hotKeyDiagnostics
-
         let notesLabel = uiLabel("Recorded notes", size: 12, weight: .semibold, color: secondaryTextColor)
-        notesLabel.frame = NSRect(x: mainX, y: 244, width: 220, height: 18)
+        notesLabel.frame = NSRect(x: mainX, y: 226, width: 220, height: 18)
         content.addSubview(notesLabel)
 
-        let scrollView = NSScrollView(frame: NSRect(x: mainX, y: 52, width: mainW, height: 180))
+        let scrollView = NSScrollView(frame: NSRect(x: mainX, y: 52, width: mainW, height: 162))
         let textView = NSTextView(frame: scrollView.bounds)
         styleScrollView(scrollView, textView: textView)
         scrollView.documentView = textView
@@ -1104,8 +1096,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         notesTextView = textView
         refreshNotesView()
 
-        let eventScrollView = NSScrollView(frame: NSRect(x: mainX, y: 52, width: mainW, height: 180))
-
+        let eventScrollView = NSScrollView(frame: NSRect(x: mainX, y: 52, width: mainW, height: 162))
         let eventTextView = NSTextView(frame: eventScrollView.bounds)
         styleScrollView(eventScrollView, textView: eventTextView, mono: true)
         eventScrollView.documentView = eventTextView
@@ -1368,98 +1359,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 }
 
+/// A calm, near-black canvas with a single soft amber glow behind the title.
+/// Deliberately quiet: the content does the talking, the way Wispr Flow keeps
+/// its surface clean. No photo, motif, grain, or grid competing with the form.
 final class DashboardBackgroundView: NSView {
-    private static let backgroundImage: NSImage? = {
-        guard let url = Bundle.main.url(forResource: "PersonInDarkRoom", withExtension: "jpg") else {
-            return nil
-        }
-
-        guard let inputImage = CIImage(contentsOf: url) else {
-            return NSImage(contentsOf: url)
-        }
-
-        let filter = CIFilter(name: "CIGaussianBlur")
-        filter?.setValue(inputImage.clampedToExtent(), forKey: kCIInputImageKey)
-        filter?.setValue(18.0, forKey: kCIInputRadiusKey)
-
-        guard let outputImage = filter?.outputImage?.cropped(to: inputImage.extent) else {
-            return NSImage(contentsOf: url)
-        }
-
-        let context = CIContext(options: nil)
-        guard let cgImage = context.createCGImage(outputImage, from: inputImage.extent) else {
-            return NSImage(contentsOf: url)
-        }
-
-        return NSImage(cgImage: cgImage, size: NSSize(width: inputImage.extent.width, height: inputImage.extent.height))
-    }()
-
     override var isFlipped: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedRed: 0.035, green: 0.035, blue: 0.038, alpha: 1).setFill()
-        bounds.fill()
-
-        drawPhotoBackground()
-        drawGrain()
-    }
-
-    private func drawPhotoBackground() {
-        guard let image = Self.backgroundImage, image.size.width > 0, image.size.height > 0 else {
-            let fallback = NSGradient(colors: [
-                NSColor(calibratedWhite: 0.02, alpha: 0.98),
-                NSColor(calibratedWhite: 0.10, alpha: 0.7),
-                NSColor(calibratedWhite: 0.02, alpha: 0.98),
-            ])
-            fallback?.draw(in: bounds, angle: 0)
-            return
-        }
-
-        let scale = max(bounds.width / image.size.width, bounds.height / image.size.height)
-        let drawSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
-        let drawRect = NSRect(
-            x: (bounds.width - drawSize.width) * 0.50,
-            y: (bounds.height - drawSize.height) * 0.46,
-            width: drawSize.width,
-            height: drawSize.height
-        )
-
-        NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(rect: bounds).addClip()
-        image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 0.52)
-        NSGraphicsContext.restoreGraphicsState()
-
-        NSColor(calibratedWhite: 0, alpha: 0.62).setFill()
-        bounds.fill()
-
-        let leftVignette = NSGradient(colors: [
-            NSColor(calibratedWhite: 0, alpha: 0.78),
-            NSColor(calibratedWhite: 0, alpha: 0.32),
-            NSColor(calibratedWhite: 0, alpha: 0.10),
+        let base = NSGradient(colors: [
+            NSColor(calibratedRed: 0.055, green: 0.057, blue: 0.066, alpha: 1),
+            NSColor(calibratedRed: 0.039, green: 0.040, blue: 0.047, alpha: 1),
         ])
-        leftVignette?.draw(in: bounds, angle: 0)
+        base?.draw(in: bounds, angle: -90)
 
-        let rightLight = NSGradient(colors: [
-            NSColor(calibratedWhite: 0.85, alpha: 0.10),
-            NSColor(calibratedWhite: 0.22, alpha: 0.08),
-            NSColor.clear,
+        let glowCenter = NSPoint(x: bounds.width * 0.62, y: bounds.height * 0.9)
+        let glowRadius = bounds.width * 0.45
+        let glow = NSGradient(colors: [
+            NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 0.14),
+            NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 0.0),
         ])
-        rightLight?.draw(
-            in: NSRect(x: bounds.width * 0.56, y: bounds.height * 0.24, width: bounds.width * 0.54, height: bounds.height * 0.44),
-            relativeCenterPosition: NSPoint(x: 0.38, y: 0.04)
+        glow?.draw(
+            fromCenter: glowCenter, radius: 0,
+            toCenter: glowCenter, radius: glowRadius,
+            options: []
         )
-    }
-
-    private func drawGrain() {
-        NSColor(calibratedWhite: 1, alpha: 0.010).setFill()
-        for index in 0..<90 {
-            let x = CGFloat((index * 47) % Int(max(bounds.width, 1)))
-            let y = CGFloat((index * 83) % Int(max(bounds.height, 1)))
-            NSBezierPath(rect: NSRect(x: x, y: y, width: 1, height: 1)).fill()
-        }
     }
 }
 
+/// The sidebar surface — a calm panel with a single hairline on its right edge.
 final class SidebarView: NSView {
     private let fill: NSColor
     private let line: NSColor
@@ -1487,6 +1414,7 @@ final class SidebarView: NSView {
     }
 }
 
+/// The Voi signature — five amber bars echoing the brand waveform mark.
 final class WaveMarkView: NSView {
     private let color: NSColor
 
