@@ -146,12 +146,34 @@ function DictationSurface({
 }
 
 // ---------------------------------------------------------------------------
-// AmberWave — canvas reading 48 bars from an AnalyserNode
+// Nebula — a cluster of soft, pulsing dots orbiting inside a circle.
+// Web port of the iOS `OrbitDotsCircle`, made audio-reactive: the overall
+// mic level pushes the dots outward and brightens them while you speak.
 // ---------------------------------------------------------------------------
 
-const BAR_COUNT = 48
+interface DotConfig {
+  radius: number
+  size: number
+  speed: number
+  phase: number
+  opacity: number
+}
 
-function AmberWave({ analyser }: { analyser: AnalyserNode | null }) {
+// 6 dots, each with its own orbit radius, base size, angular speed, starting
+// phase and opacity. The variety of speeds/radii gives it a drifting feel
+// rather than a rigid spinner. Radii are in units of the base orbit radius.
+const DOT_CONFIGS: DotConfig[] = [
+  { radius: 0.82, size: 3.5, speed: 1.1, phase: 0.0, opacity: 0.95 },
+  { radius: 0.64, size: 2.5, speed: 1.7, phase: 0.4, opacity: 0.7 },
+  { radius: 1.0, size: 2.0, speed: 0.85, phase: 0.9, opacity: 0.55 },
+  { radius: 0.55, size: 3.0, speed: 2.2, phase: 1.4, opacity: 0.8 },
+  { radius: 0.91, size: 2.0, speed: 1.45, phase: 1.9, opacity: 0.6 },
+  { radius: 0.73, size: 2.5, speed: 0.95, phase: 2.5, opacity: 0.75 },
+]
+
+const AMBER_RGB = '246,185,59'
+
+function Nebula({ analyser, size = 140 }: { analyser: AnalyserNode | null; size?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -162,6 +184,7 @@ function AmberWave({ analyser }: { analyser: AnalyserNode | null }) {
 
     let raf = 0
     const data = analyser ? new Uint8Array(analyser.frequencyBinCount) : null
+    let level = 0 // smoothed mic level, 0..1
 
     const render = () => {
       const dpr = window.devicePixelRatio || 1
@@ -174,40 +197,57 @@ function AmberWave({ analyser }: { analyser: AnalyserNode | null }) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, width, height)
 
+      // Average mic amplitude -> smoothed level.
       if (analyser && data) {
         analyser.getByteFrequencyData(data)
+        let sum = 0
+        for (let i = 0; i < data.length; i++) sum += data[i]
+        const avg = sum / data.length / 255
+        level += (avg - level) * 0.25
       }
 
-      const gap = 3
-      const barWidth = (width - gap * (BAR_COUNT - 1)) / BAR_COUNT
-      const step = data ? Math.floor(data.length / BAR_COUNT) : 0
+      const cx = width / 2
+      const cy = height / 2
+      const t = performance.now() / 1000
+      // Base orbit radius drifts outward as you speak.
+      const baseRadius = (Math.min(width, height) / 2) * (0.28 + 0.5 * level)
 
-      for (let i = 0; i < BAR_COUNT; i++) {
-        let amplitude = 0
-        if (data && step > 0) {
-          amplitude = data[i * step] / 255
-        }
-        const barHeight = Math.max(2, amplitude * height)
-        const x = i * (barWidth + gap)
-        const y = (height - barHeight) / 2
-        ctx.fillStyle = '#f6b93b'
-        const r = Math.min(barWidth / 2, 2)
+      // Faint background disc.
+      ctx.beginPath()
+      ctx.arc(cx, cy, Math.min(width, height) / 2, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(${AMBER_RGB},0.05)`
+      ctx.fill()
+
+      ctx.shadowColor = `rgba(${AMBER_RGB},0.9)`
+
+      for (const cfg of DOT_CONFIGS) {
+        const angle = t * cfg.speed + cfg.phase
+        const x = cx + baseRadius * cfg.radius * Math.cos(angle)
+        const y = cy + baseRadius * cfg.radius * Math.sin(angle)
+        // Second sine wave (2.3x orbit speed) makes each dot breathe.
+        const pulse = (Math.sin(t * cfg.speed * 2.3 + cfg.phase) + 1) / 2
+        const brightness = cfg.opacity * (0.4 + 0.6 * pulse) * (0.55 + 0.45 * level)
+        const dotSize = cfg.size * (0.75 + 0.25 * pulse) * (size / 36)
+
         ctx.beginPath()
-        ctx.roundRect(x, y, barWidth, barHeight, r)
+        ctx.arc(x, y, dotSize, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(${AMBER_RGB},${brightness})`
+        ctx.shadowBlur = 8 + 6 * pulse
         ctx.fill()
       }
+      ctx.shadowBlur = 0
 
       raf = requestAnimationFrame(render)
     }
 
     raf = requestAnimationFrame(render)
     return () => cancelAnimationFrame(raf)
-  }, [analyser])
+  }, [analyser, size])
 
   return (
     <canvas
       ref={canvasRef}
-      style={{ width: '100%', height: 64, display: 'block' }}
+      style={{ width: size, height: size, display: 'block', margin: '0 auto' }}
     />
   )
 }
@@ -239,7 +279,7 @@ function RecordingOverlay({
             </span>
           </div>
         </div>
-        <AmberWave analyser={analyser} />
+        <Nebula analyser={analyser} />
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
           <button style={ghostButton} onClick={onCancel}>
             Cancel
