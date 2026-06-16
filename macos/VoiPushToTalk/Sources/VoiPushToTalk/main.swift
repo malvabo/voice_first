@@ -651,7 +651,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     private func showRecordingOverlay(status: String) {
         if recordingOverlayWindow == nil {
-            let size = NSSize(width: 260, height: 96)
+            let size = NSSize(width: 132, height: 52)
             let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
             let origin = NSPoint(
                 x: screenFrame.midX - size.width / 2,
@@ -675,13 +675,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             content.autoresizingMask = [.width, .height]
             window.contentView = content
 
-            let label = uiLabel(status, size: 14, weight: .semibold, color: primaryTextColor)
-            label.frame = NSRect(x: 102, y: 52, width: 128, height: 22)
+            let label = uiLabel(status, size: 9.5, weight: .semibold, color: primaryTextColor)
+            label.frame = NSRect(x: 52, y: 27, width: 68, height: 15)
             content.addSubview(label)
             recordingOverlayStatusLabel = label
 
-            let sublabel = uiLabel("Release to paste", size: 11.5, weight: .regular, color: secondaryTextColor)
-            sublabel.frame = NSRect(x: 102, y: 31, width: 128, height: 18)
+            let sublabel = uiLabel("Release to paste", size: 7.5, weight: .regular, color: secondaryTextColor)
+            sublabel.frame = NSRect(x: 52, y: 15, width: 72, height: 12)
             content.addSubview(sublabel)
 
             recordingOverlayWindow = window
@@ -1523,7 +1523,7 @@ final class WaveMarkView: NSView {
 final class RecordingOverlayView: NSView {
     private var animationTimer: Timer?
     private let discColor = NSColor(calibratedWhite: 0.18, alpha: 0.38)
-    private let glowColor = NSColor(calibratedWhite: 0.62, alpha: 1)
+    private let glowColor = NSColor(calibratedWhite: 1.0, alpha: 1)
 
     private struct DotConfig {
         let radius: CGFloat
@@ -1542,7 +1542,7 @@ final class RecordingOverlayView: NSView {
         DotConfig(radius: 8, size: 2.5, speed: 0.95, phase: 2.5, opacity: 0.75)
     ]
 
-    init(frame: NSRect, accent: NSColor) {
+    init(frame: NSRect, accent _: NSColor) {
         super.init(frame: frame)
     }
 
@@ -1564,7 +1564,7 @@ final class RecordingOverlayView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let rounded = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 18, yRadius: 18)
+        let rounded = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 14, yRadius: 14)
         NSColor(calibratedWhite: 0.025, alpha: 0.86).setFill()
         rounded.fill()
 
@@ -1572,7 +1572,7 @@ final class RecordingOverlayView: NSView {
         rounded.lineWidth = 1
         rounded.stroke()
 
-        let markRect = NSRect(x: 24, y: 22, width: 56, height: 56)
+        let markRect = NSRect(x: 12, y: 11, width: 28, height: 28)
         discColor.setFill()
         NSBezierPath(ovalIn: markRect).fill()
         drawOrbitDots(in: markRect)
@@ -1595,11 +1595,11 @@ final class RecordingOverlayView: NSView {
 
             NSGraphicsContext.saveGraphicsState()
             let shadow = NSShadow()
-            shadow.shadowColor = glowColor.withAlphaComponent(cfg.opacity * 0.18)
+            shadow.shadowColor = glowColor.withAlphaComponent(cfg.opacity * 0.16)
             shadow.shadowOffset = .zero
-            shadow.shadowBlurRadius = 2.2
+            shadow.shadowBlurRadius = 1.6
             shadow.set()
-            glowColor.withAlphaComponent(cfg.opacity * (0.4 + 0.3 * pulse)).setFill()
+            glowColor.withAlphaComponent(cfg.opacity * (0.64 + 0.24 * pulse)).setFill()
             NSBezierPath(ovalIn: dotRect).fill()
             NSGraphicsContext.restoreGraphicsState()
         }
