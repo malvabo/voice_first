@@ -651,7 +651,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     private func showRecordingOverlay(status: String) {
         if recordingOverlayWindow == nil {
-            let size = NSSize(width: 132, height: 52)
+            let size = NSSize(width: 164, height: 56)
             let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
             let origin = NSPoint(
                 x: screenFrame.midX - size.width / 2,
@@ -675,14 +675,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             content.autoresizingMask = [.width, .height]
             window.contentView = content
 
-            let label = uiLabel(status, size: 9.5, weight: .semibold, color: primaryTextColor)
-            label.frame = NSRect(x: 52, y: 27, width: 68, height: 15)
+            let label = uiLabel(status, size: 14, weight: .semibold, color: primaryTextColor)
+            label.frame = NSRect(x: 56, y: 20, width: 92, height: 18)
             content.addSubview(label)
             recordingOverlayStatusLabel = label
-
-            let sublabel = uiLabel("Release to paste", size: 7.5, weight: .regular, color: secondaryTextColor)
-            sublabel.frame = NSRect(x: 52, y: 15, width: 72, height: 12)
-            content.addSubview(sublabel)
 
             recordingOverlayWindow = window
         }
