@@ -1521,8 +1521,9 @@ final class WaveMarkView: NSView {
 }
 
 final class RecordingOverlayView: NSView {
-    private let accent: NSColor
     private var animationTimer: Timer?
+    private let discColor = NSColor(calibratedWhite: 0.18, alpha: 0.38)
+    private let glowColor = NSColor(calibratedWhite: 0.62, alpha: 1)
 
     private struct DotConfig {
         let radius: CGFloat
@@ -1542,7 +1543,6 @@ final class RecordingOverlayView: NSView {
     ]
 
     init(frame: NSRect, accent: NSColor) {
-        self.accent = accent
         super.init(frame: frame)
     }
 
@@ -1573,7 +1573,7 @@ final class RecordingOverlayView: NSView {
         rounded.stroke()
 
         let markRect = NSRect(x: 24, y: 22, width: 56, height: 56)
-        accent.withAlphaComponent(0.16).setFill()
+        discColor.setFill()
         NSBezierPath(ovalIn: markRect).fill()
         drawOrbitDots(in: markRect)
     }
@@ -1595,11 +1595,11 @@ final class RecordingOverlayView: NSView {
 
             NSGraphicsContext.saveGraphicsState()
             let shadow = NSShadow()
-            shadow.shadowColor = accent.withAlphaComponent(cfg.opacity * 0.5)
+            shadow.shadowColor = glowColor.withAlphaComponent(cfg.opacity * 0.18)
             shadow.shadowOffset = .zero
-            shadow.shadowBlurRadius = 3.0
+            shadow.shadowBlurRadius = 2.2
             shadow.set()
-            accent.withAlphaComponent(cfg.opacity * (0.55 + 0.45 * pulse)).setFill()
+            glowColor.withAlphaComponent(cfg.opacity * (0.4 + 0.3 * pulse)).setFill()
             NSBezierPath(ovalIn: dotRect).fill()
             NSGraphicsContext.restoreGraphicsState()
         }
