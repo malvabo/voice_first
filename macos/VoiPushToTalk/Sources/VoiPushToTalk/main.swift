@@ -1522,6 +1522,24 @@ final class WaveMarkView: NSView {
 
 final class RecordingOverlayView: NSView {
     private let accent: NSColor
+    private var animationTimer: Timer?
+
+    private struct DotConfig {
+        let radius: CGFloat
+        let size: CGFloat
+        let speed: CGFloat
+        let phase: CGFloat
+        let opacity: CGFloat
+    }
+
+    private let dotConfigs: [DotConfig] = [
+        DotConfig(radius: 9, size: 3.5, speed: 1.1, phase: 0.0, opacity: 0.95),
+        DotConfig(radius: 7, size: 2.5, speed: 1.7, phase: 0.4, opacity: 0.70),
+        DotConfig(radius: 11, size: 2.0, speed: 0.85, phase: 0.9, opacity: 0.55),
+        DotConfig(radius: 6, size: 3.0, speed: 2.2, phase: 1.4, opacity: 0.80),
+        DotConfig(radius: 10, size: 2.0, speed: 1.45, phase: 1.9, opacity: 0.60),
+        DotConfig(radius: 8, size: 2.5, speed: 0.95, phase: 2.5, opacity: 0.75)
+    ]
 
     init(frame: NSRect, accent: NSColor) {
         self.accent = accent
@@ -1529,8 +1547,21 @@ final class RecordingOverlayView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
     override var isFlipped: Bool { false }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            animationTimer?.invalidate()
+            animationTimer = nil
+        } else if animationTimer == nil {
+            animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.needsDisplay = true
+                }
+            }
+        }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let rounded = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 18, yRadius: 18)
@@ -1544,21 +1575,33 @@ final class RecordingOverlayView: NSView {
         let markRect = NSRect(x: 24, y: 22, width: 56, height: 56)
         accent.withAlphaComponent(0.16).setFill()
         NSBezierPath(ovalIn: markRect).fill()
+        drawOrbitDots(in: markRect)
+    }
 
-        accent.setFill()
-        let heights: [CGFloat] = [10, 22, 34, 22, 10]
-        let barWidth: CGFloat = 3.2
-        let gap: CGFloat = 5.0
-        let totalWidth = CGFloat(heights.count) * barWidth + CGFloat(heights.count - 1) * gap
-        let startX = markRect.midX - totalWidth / 2
-        for (index, height) in heights.enumerated() {
-            let rect = NSRect(
-                x: startX + CGFloat(index) * (barWidth + gap),
-                y: markRect.midY - height / 2,
-                width: barWidth,
-                height: height
+    private func drawOrbitDots(in rect: NSRect) {
+        let t = CGFloat(Date().timeIntervalSinceReferenceDate)
+        let scale = rect.width / 36.0
+        let center = NSPoint(x: rect.midX, y: rect.midY)
+
+        for cfg in dotConfigs {
+            let angle = t * cfg.speed + cfg.phase
+            let pulse = (sin(t * cfg.speed * 2.3 + cfg.phase) + 1) / 2
+            let dotSize = cfg.size * scale * (0.75 + 0.25 * pulse)
+            let point = NSPoint(
+                x: center.x + cfg.radius * scale * cos(angle) - dotSize / 2,
+                y: center.y + cfg.radius * scale * sin(angle) - dotSize / 2
             )
-            NSBezierPath(roundedRect: rect, xRadius: barWidth / 2, yRadius: barWidth / 2).fill()
+            let dotRect = NSRect(origin: point, size: NSSize(width: dotSize, height: dotSize))
+
+            NSGraphicsContext.saveGraphicsState()
+            let shadow = NSShadow()
+            shadow.shadowColor = accent.withAlphaComponent(cfg.opacity * 0.5)
+            shadow.shadowOffset = .zero
+            shadow.shadowBlurRadius = 3.0
+            shadow.set()
+            accent.withAlphaComponent(cfg.opacity * (0.55 + 0.45 * pulse)).setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
+            NSGraphicsContext.restoreGraphicsState()
         }
     }
 }
