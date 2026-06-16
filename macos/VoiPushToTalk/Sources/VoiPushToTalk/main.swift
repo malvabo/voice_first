@@ -1530,12 +1530,18 @@ final class RecordingOverlayView: NSView {
     }
 
     private let dotConfigs: [DotConfig] = [
-        DotConfig(radius: 9, size: 3.5, speed: 1.1, phase: 0.0, opacity: 0.95),
-        DotConfig(radius: 7, size: 2.5, speed: 1.7, phase: 0.4, opacity: 0.70),
-        DotConfig(radius: 11, size: 2.0, speed: 0.85, phase: 0.9, opacity: 0.55),
-        DotConfig(radius: 6, size: 3.0, speed: 2.2, phase: 1.4, opacity: 0.80),
-        DotConfig(radius: 10, size: 2.0, speed: 1.45, phase: 1.9, opacity: 0.60),
-        DotConfig(radius: 8, size: 2.5, speed: 0.95, phase: 2.5, opacity: 0.75)
+        DotConfig(radius: 4.5, size: 1.8, speed: 1.85, phase: 0.10, opacity: 0.82),
+        DotConfig(radius: 5.5, size: 1.9, speed: 1.30, phase: 0.55, opacity: 0.74),
+        DotConfig(radius: 6.5, size: 2.1, speed: 2.15, phase: 0.95, opacity: 0.90),
+        DotConfig(radius: 7.2, size: 2.2, speed: 1.05, phase: 1.35, opacity: 0.68),
+        DotConfig(radius: 8.0, size: 1.8, speed: 1.55, phase: 1.80, opacity: 0.62),
+        DotConfig(radius: 8.8, size: 2.0, speed: 0.92, phase: 2.20, opacity: 0.72),
+        DotConfig(radius: 9.5, size: 1.7, speed: 1.40, phase: 2.65, opacity: 0.58),
+        DotConfig(radius: 10.4, size: 1.9, speed: 2.05, phase: 3.00, opacity: 0.76),
+        DotConfig(radius: 6.0, size: 1.6, speed: 1.72, phase: 3.45, opacity: 0.66),
+        DotConfig(radius: 7.8, size: 1.7, speed: 1.18, phase: 3.95, opacity: 0.70),
+        DotConfig(radius: 9.0, size: 1.9, speed: 1.62, phase: 4.35, opacity: 0.84),
+        DotConfig(radius: 5.0, size: 1.5, speed: 2.30, phase: 4.80, opacity: 0.60)
     ]
 
     init(frame: NSRect, accent _: NSColor) {
