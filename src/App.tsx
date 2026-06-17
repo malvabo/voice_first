@@ -1,12 +1,9 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
-  useRef,
   useState,
   type CSSProperties,
 } from 'react'
-import { transcribeWithGroq } from './lib/groqTranscribe'
 
 // ---------------------------------------------------------------------------
 // Types & storage
@@ -15,12 +12,12 @@ import { transcribeWithGroq } from './lib/groqTranscribe'
 interface Entry {
   id: string
   text: string
-  durationMs: number
   createdAt: number
 }
 
 const ENTRIES_KEY = 'voi-entries'
-const GROQ_KEY = 'voi-groq-key'
+const KEY_KEY = 'voi-api-key'
+const AUTOPASTE_KEY = 'voi-auto-paste'
 
 function loadEntries(): Entry[] {
   try {
@@ -33,467 +30,361 @@ function loadEntries(): Entry[] {
   }
 }
 
-function saveEntries(entries: Entry[]) {
-  localStorage.setItem(ENTRIES_KEY, JSON.stringify(entries))
-}
-
-function loadGroqKey(): string {
-  return localStorage.getItem(GROQ_KEY) ?? ''
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function formatTimer(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-}
-
 function formatDate(ts: number): string {
   return new Date(ts).toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
+    year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
   })
 }
 
 // ---------------------------------------------------------------------------
-// Waveform — slim canvas reading bars from an AnalyserNode
+// App — the macOS app window. Recording is handled outside the app by the
+// fn/Globe shortcut; this window shows status, the latest note, history,
+// and settings.
 // ---------------------------------------------------------------------------
 
-const BAR_COUNT = 40
-
-function Waveform({ analyser }: { analyser: AnalyserNode | null }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    let raf = 0
-    const data = analyser ? new Uint8Array(analyser.frequencyBinCount) : null
-
-    const render = () => {
-      const dpr = window.devicePixelRatio || 1
-      const width = canvas.clientWidth
-      const height = canvas.clientHeight
-      if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
-        canvas.width = width * dpr
-        canvas.height = height * dpr
-      }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.clearRect(0, 0, width, height)
-
-      if (analyser && data) analyser.getByteFrequencyData(data)
-
-      const gap = 3
-      const barWidth = (width - gap * (BAR_COUNT - 1)) / BAR_COUNT
-      const step = data ? Math.floor(data.length / BAR_COUNT) : 0
-
-      for (let i = 0; i < BAR_COUNT; i++) {
-        const amplitude = data && step > 0 ? data[i * step] / 255 : 0
-        const barHeight = Math.max(2, amplitude * height)
-        const x = i * (barWidth + gap)
-        const y = (height - barHeight) / 2
-        ctx.fillStyle = '#f6b93b'
-        ctx.beginPath()
-        ctx.roundRect(x, y, barWidth, barHeight, Math.min(barWidth / 2, 2))
-        ctx.fill()
-      }
-
-      raf = requestAnimationFrame(render)
-    }
-
-    raf = requestAnimationFrame(render)
-    return () => cancelAnimationFrame(raf)
-  }, [analyser])
-
-  return (
-    <canvas ref={canvasRef} style={{ width: '100%', height: 40, display: 'block' }} />
-  )
-}
-
-// ---------------------------------------------------------------------------
-// App
-// ---------------------------------------------------------------------------
-
-type RecorderState = 'idle' | 'recording' | 'transcribing'
+type Tab = 'overview' | 'settings'
 
 export default function App() {
+  const [tab, setTab] = useState<Tab>('overview')
   const [entries, setEntries] = useState<Entry[]>(() => loadEntries())
-  const [openId, setOpenId] = useState<string | null>(null)
-  const [groqKey, setGroqKey] = useState<string>(() => loadGroqKey())
+  const [apiKey, setApiKey] = useState<string>(
+    () => localStorage.getItem(KEY_KEY) ?? '',
+  )
   const [keyDraft, setKeyDraft] = useState('')
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [recorderState, setRecorderState] = useState<RecorderState>('idle')
-  const [elapsedMs, setElapsedMs] = useState(0)
-  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [autoPaste, setAutoPaste] = useState<boolean>(
+    () => localStorage.getItem(AUTOPASTE_KEY) !== 'off',
+  )
+  const [micStatus, setMicStatus] = useState<PermissionState | 'unknown'>('unknown')
+  const [copied, setCopied] = useState(false)
 
-  const streamRef = useRef<MediaStream | null>(null)
-  const audioCtxRef = useRef<AudioContext | null>(null)
-  const recorderRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<Blob[]>([])
-  const timerRef = useRef<number | null>(null)
-  const startTimeRef = useRef<number>(0)
-  const cancelledRef = useRef<boolean>(false)
-
+  // Keep the settings draft in sync when entering the tab.
   useEffect(() => {
-    saveEntries(entries)
-  }, [entries])
+    if (tab === 'settings') setKeyDraft(apiKey)
+  }, [tab, apiKey])
 
-  const teardown = useCallback(() => {
-    if (timerRef.current !== null) {
-      clearInterval(timerRef.current)
-      timerRef.current = null
-    }
-    recorderRef.current = null
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    streamRef.current = null
-    if (audioCtxRef.current) {
-      audioCtxRef.current.close().catch(() => {})
-      audioCtxRef.current = null
-    }
-    setAnalyser(null)
+  // Track microphone permission for the Setup health panel.
+  useEffect(() => {
+    let status: PermissionStatus | null = null
+    const update = () => status && setMicStatus(status.state)
+    navigator.permissions
+      ?.query({ name: 'microphone' as PermissionName })
+      .then((s) => {
+        status = s
+        setMicStatus(s.state)
+        s.addEventListener('change', update)
+      })
+      .catch(() => setMicStatus('unknown'))
+    return () => status?.removeEventListener('change', update)
   }, [])
 
-  const startRecording = useCallback(async () => {
-    if (!groqKey) {
-      setKeyDraft('')
-      setSettingsOpen(true)
-      return
-    }
-    setError(null)
-    cancelledRef.current = false
+  const latest = entries[0] ?? null
+
+  const copyLatest = useCallback(async () => {
+    if (!latest) return
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-
-      const audioCtx = new AudioContext()
-      audioCtxRef.current = audioCtx
-      const source = audioCtx.createMediaStreamSource(stream)
-      const node = audioCtx.createAnalyser()
-      node.fftSize = 256
-      source.connect(node)
-      setAnalyser(node)
-
-      chunksRef.current = []
-      const recorder = new MediaRecorder(stream)
-      recorderRef.current = recorder
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data)
-      }
-      recorder.start()
-
-      startTimeRef.current = Date.now()
-      setElapsedMs(0)
-      timerRef.current = window.setInterval(() => {
-        setElapsedMs(Date.now() - startTimeRef.current)
-      }, 200)
-
-      setRecorderState('recording')
+      await navigator.clipboard.writeText(latest.text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
     } catch {
-      teardown()
-      setRecorderState('idle')
-      setError('Could not access the microphone.')
+      /* clipboard unavailable */
     }
-  }, [groqKey, teardown])
-
-  const stopRecording = useCallback(() => {
-    const recorder = recorderRef.current
-    if (!recorder) return
-    const durationMs = Date.now() - startTimeRef.current
-
-    recorder.onstop = async () => {
-      streamRef.current?.getTracks().forEach((t) => t.stop())
-      streamRef.current = null
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close().catch(() => {})
-        audioCtxRef.current = null
-      }
-      setAnalyser(null)
-
-      if (cancelledRef.current) {
-        setRecorderState('idle')
-        return
-      }
-
-      const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-      setRecorderState('transcribing')
-      try {
-        const text = await transcribeWithGroq(blob, groqKey)
-        const entry: Entry = {
-          id: crypto.randomUUID(),
-          text,
-          durationMs,
-          createdAt: Date.now(),
-        }
-        setEntries((prev) => [entry, ...prev])
-        setOpenId(entry.id)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Transcription failed.')
-      } finally {
-        setRecorderState('idle')
-      }
-    }
-
-    if (timerRef.current !== null) {
-      clearInterval(timerRef.current)
-      timerRef.current = null
-    }
-    recorder.stop()
-  }, [groqKey])
-
-  const cancelRecording = useCallback(() => {
-    cancelledRef.current = true
-    const recorder = recorderRef.current
-    if (recorder && recorder.state !== 'inactive') {
-      if (timerRef.current !== null) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
-      }
-      recorder.stop()
-    } else {
-      teardown()
-      setRecorderState('idle')
-    }
-  }, [teardown])
+  }, [latest])
 
   const deleteEntry = useCallback((id: string) => {
-    setEntries((prev) => prev.filter((e) => e.id !== id))
-    setOpenId((cur) => (cur === id ? null : cur))
+    setEntries((prev) => {
+      const next = prev.filter((e) => e.id !== id)
+      localStorage.setItem(ENTRIES_KEY, JSON.stringify(next))
+      return next
+    })
   }, [])
 
-  const updateEntry = useCallback((id: string, text: string) => {
-    setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, text } : e)))
-  }, [])
+  const saveKey = () => {
+    const trimmed = keyDraft.trim()
+    setApiKey(trimmed)
+    localStorage.setItem(KEY_KEY, trimmed)
+  }
 
   return (
     <div style={shell}>
-      <div style={column}>
-        {/* Header */}
-        <header style={header}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <rect x="2" y="9" width="2.5" height="6" rx="1.25" fill="var(--amber)" />
-              <rect x="6.5" y="5" width="2.5" height="14" rx="1.25" fill="var(--amber)" />
-              <rect x="11" y="2" width="2.5" height="20" rx="1.25" fill="var(--amber)" />
-              <rect x="15.5" y="5" width="2.5" height="14" rx="1.25" fill="var(--amber)" />
-              <rect x="20" y="9" width="2.5" height="6" rx="1.25" fill="var(--amber)" />
-            </svg>
-            <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em' }}>
+      <div style={glow} />
+      <div style={content}>
+        {/* Top bar */}
+        <header style={topBar}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+            <Logo />
+            <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em' }}>
               Voi
             </span>
           </div>
-          <button
-            style={textButton}
-            onClick={() => {
-              setKeyDraft(groqKey)
-              setSettingsOpen(true)
-            }}
-          >
-            Settings
-          </button>
-        </header>
 
-        {/* Recorder */}
-        <div style={recorder}>
-          {recorderState === 'recording' ? (
-            <>
-              <div style={timerRow}>
-                <span style={pulsingDot} />
-                <span style={timerText}>{formatTimer(elapsedMs)}</span>
-              </div>
-              <Waveform analyser={analyser} />
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button style={ghostButton} onClick={cancelRecording}>
-                  Cancel
-                </button>
-                <button style={amberButton} onClick={stopRecording}>
-                  Stop
-                </button>
-              </div>
-            </>
-          ) : recorderState === 'transcribing' ? (
-            <div style={transcribing}>
-              <span style={spinner} />
-              <span style={{ letterSpacing: '0.16em', fontSize: 12, color: '#6b7186' }}>
-                TRANSCRIBING
-              </span>
-            </div>
-          ) : (
-            <button style={recordButton} onClick={startRecording} aria-label="Record">
-              <MicIcon />
-            </button>
-          )}
-        </div>
-
-        {error && <div style={errorBanner}>{error}</div>}
-
-        {/* Entries */}
-        <div style={list}>
-          {entries.length === 0 ? (
-            <p style={emptyText}>Tap the mic and start speaking.</p>
-          ) : (
-            entries.map((entry) => (
-              <EntryRow
-                key={entry.id}
-                entry={entry}
-                open={entry.id === openId}
-                onToggle={() =>
-                  setOpenId((cur) => (cur === entry.id ? null : entry.id))
-                }
-                onSave={(text) => updateEntry(entry.id, text)}
-                onDelete={() => deleteEntry(entry.id)}
-              />
-            ))
-          )}
-        </div>
-      </div>
-
-      {settingsOpen && (
-        <div style={backdrop} onClick={() => setSettingsOpen(false)}>
-          <div style={modalCard} onClick={(e) => e.stopPropagation()}>
-            <span style={{ fontSize: 13, color: '#9aa0b4' }}>Groq API key</span>
-            <input
-              type="password"
-              value={keyDraft}
-              onChange={(e) => setKeyDraft(e.target.value)}
-              placeholder="gsk_..."
-              style={textInput}
-              autoFocus
-            />
-            <span style={{ fontSize: 12, color: '#5a6078' }}>
-              Stored only in your browser.
-            </span>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button style={ghostButton} onClick={() => setSettingsOpen(false)}>
-                Cancel
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={segmented}>
+              <button
+                style={tab === 'overview' ? segActive : segItem}
+                onClick={() => setTab('overview')}
+              >
+                Overview
               </button>
               <button
-                style={amberButton}
-                onClick={() => {
-                  const trimmed = keyDraft.trim()
-                  setGroqKey(trimmed)
-                  localStorage.setItem(GROQ_KEY, trimmed)
-                  setSettingsOpen(false)
-                }}
+                style={tab === 'settings' ? segActive : segItem}
+                onClick={() => setTab('settings')}
               >
-                Save
+                Settings
               </button>
             </div>
+            <span style={readyPill}>
+              <span style={readyDot} />
+              Ready
+            </span>
           </div>
-        </div>
-      )}
+        </header>
+
+        {tab === 'overview' ? (
+          <Overview
+            entries={entries}
+            latest={latest}
+            copied={copied}
+            onCopy={copyLatest}
+            onDelete={deleteEntry}
+          />
+        ) : (
+          <Settings
+            micStatus={micStatus}
+            hasKey={Boolean(apiKey)}
+            keyDraft={keyDraft}
+            setKeyDraft={setKeyDraft}
+            onSaveKey={saveKey}
+            autoPaste={autoPaste}
+            setAutoPaste={(v) => {
+              setAutoPaste(v)
+              localStorage.setItem(AUTOPASTE_KEY, v ? 'on' : 'off')
+            }}
+          />
+        )}
+      </div>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// EntryRow — collapsed preview that expands inline
+// Overview
 // ---------------------------------------------------------------------------
 
-function EntryRow({
-  entry,
-  open,
-  onToggle,
-  onSave,
+function Overview({
+  entries,
+  latest,
+  copied,
+  onCopy,
   onDelete,
 }: {
-  entry: Entry
-  open: boolean
-  onToggle: () => void
-  onSave: (text: string) => void
-  onDelete: () => void
+  entries: Entry[]
+  latest: Entry | null
+  copied: boolean
+  onCopy: () => void
+  onDelete: (id: string) => void
 }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(entry.text)
+  return (
+    <main style={overview}>
+      <div>
+        <h1 style={headline}>Voice where you work</h1>
+        <p style={subhead}>Hold fn/Globe, speak, release to paste.</p>
+      </div>
+
+      <section style={latestBlock}>
+        <span style={sectionLabel}>Latest note</span>
+        <p style={latestText}>
+          {latest ? latest.text : 'Your most recent dictation will appear here.'}
+        </p>
+        <div style={latestFoot}>
+          <span style={{ fontSize: 14, color: '#6b7186' }}>
+            {latest
+              ? formatDate(latest.createdAt)
+              : 'Hold fn/Globe and start speaking.'}
+          </span>
+          <button style={copyButton} onClick={onCopy} disabled={!latest}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+      </section>
+
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={sectionLabel}>Recorded notes</span>
+        <div style={notesList}>
+          {entries.length === 0 ? (
+            <p style={{ color: '#5a6078', fontSize: 15, margin: '10px 0' }}>
+              No notes yet.
+            </p>
+          ) : (
+            entries.map((entry) => (
+              <NoteRow key={entry.id} entry={entry} onDelete={() => onDelete(entry.id)} />
+            ))
+          )}
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function NoteRow({ entry, onDelete }: { entry: Entry; onDelete: () => void }) {
+  const [hover, setHover] = useState(false)
   const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    if (!open) setEditing(false)
-  }, [open])
-
-  useEffect(() => {
-    setDraft(entry.text)
-  }, [entry.text])
-
-  const preview = useMemo(() => {
-    const t = entry.text.trim()
-    if (!t) return 'Empty recording'
-    return t.length > 80 ? `${t.slice(0, 80)}…` : t
-  }, [entry.text])
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(entry.text)
       setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
+      setTimeout(() => setCopied(false), 1200)
     } catch {
       /* clipboard unavailable */
     }
   }
 
   return (
-    <div style={{ ...rowCard, ...(open ? rowCardOpen : null) }}>
-      <button style={rowHead} onClick={onToggle}>
-        <span style={rowPreview}>{open ? entry.text || 'Empty recording' : preview}</span>
-        <span style={rowMeta}>
-          {formatDate(entry.createdAt)} · {formatTimer(entry.durationMs)}
-        </span>
-      </button>
-
-      {open && (
-        <div style={rowBody}>
-          {editing && (
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              style={textarea}
-              autoFocus
-            />
-          )}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button style={textButton} onClick={copy}>
-              {copied ? 'Copied' : 'Copy'}
-            </button>
-            {editing ? (
-              <button
-                style={textButton}
-                onClick={() => {
-                  onSave(draft)
-                  setEditing(false)
-                }}
-              >
-                Save
-              </button>
-            ) : (
-              <button style={textButton} onClick={() => setEditing(true)}>
-                Edit
-              </button>
-            )}
-            <button style={{ ...textButton, color: '#e06c75' }} onClick={onDelete}>
-              Delete
-            </button>
-          </div>
-        </div>
-      )}
+    <div
+      style={noteRow}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={noteDate}>{formatDate(entry.createdAt)}</div>
+        <div style={noteText}>{entry.text}</div>
+      </div>
+      <div style={{ display: 'flex', gap: 4, opacity: hover ? 1 : 0, transition: 'opacity 0.12s' }}>
+        <button style={rowAction} onClick={copy}>
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+        <button style={{ ...rowAction, color: '#e06c75' }} onClick={onDelete}>
+          Delete
+        </button>
+      </div>
     </div>
   )
 }
 
-function MicIcon() {
+// ---------------------------------------------------------------------------
+// Settings — Setup health + Cartesia API key
+// ---------------------------------------------------------------------------
+
+function Settings({
+  micStatus,
+  hasKey,
+  keyDraft,
+  setKeyDraft,
+  onSaveKey,
+  autoPaste,
+  setAutoPaste,
+}: {
+  micStatus: PermissionState | 'unknown'
+  hasKey: boolean
+  keyDraft: string
+  setKeyDraft: (v: string) => void
+  onSaveKey: () => void
+  autoPaste: boolean
+  setAutoPaste: (v: boolean) => void
+}) {
+  const [saved, setSaved] = useState(false)
   return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
-      <rect x="9" y="2" width="6" height="12" rx="3" fill="#0a0b14" />
-      <path d="M5 11a7 7 0 0 0 14 0" stroke="#0a0b14" strokeWidth="2" strokeLinecap="round" />
-      <line x1="12" y1="18" x2="12" y2="22" stroke="#0a0b14" strokeWidth="2" strokeLinecap="round" />
+    <main style={settings}>
+      <section style={settingsBlock}>
+        <span style={sectionLabel}>Setup health</span>
+        <div style={pillStack}>
+          <HealthPill
+            tone={micStatus === 'granted' ? 'ok' : micStatus === 'denied' ? 'bad' : 'warn'}
+            label={
+              micStatus === 'granted'
+                ? 'Mic: allowed'
+                : micStatus === 'denied'
+                  ? 'Mic: blocked'
+                  : 'Mic: not yet granted'
+            }
+          />
+          <HealthPill
+            tone={autoPaste ? 'ok' : 'warn'}
+            label={autoPaste ? 'Auto-Paste: on' : 'Auto-Paste: off'}
+          />
+          <HealthPill tone={hasKey ? 'ok' : 'bad'} label={hasKey ? 'API key: saved' : 'API key: missing'} />
+        </div>
+      </section>
+
+      <section style={settingsBlock}>
+        <span style={sectionLabel}>Preferences</span>
+        <label style={toggleRow}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontSize: 15 }}>Auto-Paste after dictation</span>
+            <span style={{ fontSize: 13, color: '#6b7186' }}>
+              Paste the transcript as soon as you release the key.
+            </span>
+          </div>
+          <input
+            type="checkbox"
+            checked={autoPaste}
+            onChange={(e) => setAutoPaste(e.target.checked)}
+            style={{ width: 18, height: 18 }}
+          />
+        </label>
+      </section>
+
+      <section style={settingsBlock}>
+        <span style={sectionLabel}>Cartesia API key</span>
+        <div style={{ display: 'flex', gap: 10, maxWidth: 460 }}>
+          <input
+            type="password"
+            value={keyDraft}
+            onChange={(e) => setKeyDraft(e.target.value)}
+            placeholder="sk_car_..."
+            style={textInput}
+          />
+          <button
+            style={amberButton}
+            onClick={() => {
+              onSaveKey()
+              setSaved(true)
+              setTimeout(() => setSaved(false), 1500)
+            }}
+          >
+            {saved ? 'Saved' : 'Save key'}
+          </button>
+        </div>
+        <span style={{ fontSize: 13, color: '#5a6078' }}>Stored only on this device.</span>
+      </section>
+    </main>
+  )
+}
+
+function HealthPill({ tone, label }: { tone: 'ok' | 'warn' | 'bad'; label: string }) {
+  const color = tone === 'ok' ? '#4ade80' : tone === 'warn' ? '#f6b93b' : '#e06c75'
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 9,
+        padding: '10px 16px',
+        borderRadius: 999,
+        border: `1px solid ${color}33`,
+        background: `${color}12`,
+        fontSize: 14,
+        color,
+      }}
+    >
+      <span style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+      {label}
+    </div>
+  )
+}
+
+function Logo() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <rect x="2" y="9" width="2.5" height="6" rx="1.25" fill="var(--amber)" />
+      <rect x="6.5" y="5" width="2.5" height="14" rx="1.25" fill="var(--amber)" />
+      <rect x="11" y="2" width="2.5" height="20" rx="1.25" fill="var(--amber)" />
+      <rect x="15.5" y="5" width="2.5" height="14" rx="1.25" fill="var(--amber)" />
+      <rect x="20" y="9" width="2.5" height="6" rx="1.25" fill="var(--amber)" />
     </svg>
   )
 }
@@ -503,135 +394,220 @@ function MicIcon() {
 // ---------------------------------------------------------------------------
 
 const shell: CSSProperties = {
+  position: 'relative',
   height: '100%',
   width: '100%',
-  display: 'flex',
-  justifyContent: 'center',
-  background: 'var(--bg)',
+  background: '#08090f',
   overflowY: 'auto',
 }
 
-const column: CSSProperties = {
-  width: '100%',
-  maxWidth: 560,
-  padding: '0 24px 64px',
-  display: 'flex',
-  flexDirection: 'column',
+const glow: CSSProperties = {
+  position: 'absolute',
+  top: -160,
+  left: '50%',
+  transform: 'translateX(-50%)',
+  width: 900,
+  height: 460,
+  background: 'radial-gradient(ellipse at center, rgba(246,185,59,0.16), transparent 68%)',
+  pointerEvents: 'none',
 }
 
-const header: CSSProperties = {
+const content: CSSProperties = {
+  position: 'relative',
+  maxWidth: 1040,
+  margin: '0 auto',
+  padding: '24px 48px 64px',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 16,
+}
+
+const topBar: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  padding: '22px 0',
+  paddingBottom: 36,
 }
 
-const recorder: CSSProperties = {
+const segmented: CSSProperties = {
   display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 18,
-  minHeight: 180,
-  padding: '12px 0 28px',
+  gap: 4,
+  padding: 4,
+  borderRadius: 12,
+  background: '#15161e',
+  border: '1px solid #1d1f2b',
 }
 
-const recordButton: CSSProperties = {
-  width: 76,
-  height: 76,
-  borderRadius: '50%',
-  background: 'var(--amber)',
+const segItem: CSSProperties = {
+  background: 'transparent',
+  color: '#9aa0b4',
   border: 'none',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  transition: 'transform 0.15s ease',
-}
-
-const timerRow: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 10,
-}
-
-const timerText: CSSProperties = {
-  fontVariantNumeric: 'tabular-nums',
-  fontSize: 20,
+  borderRadius: 9,
+  padding: '8px 20px',
+  fontSize: 15,
   fontWeight: 600,
 }
 
-const transcribing: CSSProperties = {
+const segActive: CSSProperties = {
+  ...segItem,
+  background: 'var(--amber)',
+  color: '#1a1300',
+}
+
+const readyPill: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '9px 16px',
+  borderRadius: 999,
+  background: '#15161e',
+  border: '1px solid #1d1f2b',
+  fontSize: 14,
+  color: '#c0c4d0',
+}
+
+const readyDot: CSSProperties = {
+  width: 8,
+  height: 8,
+  borderRadius: '50%',
+  background: '#4ade80',
+}
+
+const overview: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
+  gap: 44,
+}
+
+const headline: CSSProperties = {
+  margin: 0,
+  fontSize: 52,
+  fontWeight: 700,
+  letterSpacing: '-0.03em',
+  lineHeight: 1.04,
+}
+
+const subhead: CSSProperties = {
+  margin: '14px 0 0',
+  fontSize: 19,
+  color: '#9aa0b4',
+}
+
+const sectionLabel: CSSProperties = {
+  fontSize: 13,
+  fontWeight: 600,
+  letterSpacing: '0.02em',
+  color: '#6b7186',
+}
+
+const latestBlock: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 16,
+}
+
+const latestText: CSSProperties = {
+  margin: 0,
+  fontSize: 27,
+  lineHeight: 1.4,
+  fontWeight: 500,
+  color: '#f1f1f5',
+  maxWidth: 820,
+}
+
+const latestFoot: CSSProperties = {
+  display: 'flex',
   alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 16,
+  borderTop: '1px solid #15161e',
+  paddingTop: 16,
+}
+
+const copyButton: CSSProperties = {
+  background: '#1b1c25',
+  color: '#e8e8ed',
+  border: '1px solid #262838',
+  borderRadius: 12,
+  padding: '11px 26px',
+  fontSize: 15,
+  fontWeight: 600,
+}
+
+const notesList: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+}
+
+const noteRow: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 16,
+  padding: '16px 0',
+  borderBottom: '1px solid #111219',
+}
+
+const noteDate: CSSProperties = {
+  fontSize: 15,
+  color: '#e8e8ed',
+  marginBottom: 4,
+}
+
+const noteText: CSSProperties = {
+  fontSize: 15,
+  lineHeight: 1.5,
+  color: '#9aa0b4',
+}
+
+const rowAction: CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  color: '#9aa0b4',
+  fontSize: 13,
+  fontWeight: 500,
+  padding: '4px 6px',
+  whiteSpace: 'nowrap',
+}
+
+const settings: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 36,
+  maxWidth: 640,
+}
+
+const settingsBlock: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
   gap: 14,
 }
 
-const list: CSSProperties = {
+const pillStack: CSSProperties = {
   display: 'flex',
-  flexDirection: 'column',
-  gap: 8,
+  flexWrap: 'wrap',
+  gap: 10,
 }
 
-const emptyText: CSSProperties = {
-  textAlign: 'center',
-  color: '#5a6078',
-  fontSize: 14,
-  margin: '8px 0',
-}
-
-const rowCard: CSSProperties = {
-  border: '1px solid #16182a',
+const toggleRow: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 20,
+  padding: '14px 16px',
   borderRadius: 12,
-  background: 'transparent',
-  overflow: 'hidden',
+  border: '1px solid #15161e',
+  background: '#0d0e16',
 }
 
-const rowCardOpen: CSSProperties = {
-  background: '#0d0e18',
-  borderColor: '#1f2235',
-}
-
-const rowHead: CSSProperties = {
-  width: '100%',
-  textAlign: 'left',
-  background: 'transparent',
-  border: 'none',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 5,
-  padding: '13px 15px',
-}
-
-const rowPreview: CSSProperties = {
-  fontSize: 14,
-  lineHeight: 1.6,
-  color: '#e8e8ed',
-  whiteSpace: 'pre-wrap',
-}
-
-const rowMeta: CSSProperties = {
-  fontSize: 11,
-  color: '#5a6078',
-}
-
-const rowBody: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 12,
-  padding: '0 15px 14px',
-}
-
-const textarea: CSSProperties = {
+const textInput: CSSProperties = {
+  flex: 1,
   background: '#0a0b14',
   border: '1px solid #24263a',
-  borderRadius: 10,
-  padding: 12,
+  borderRadius: 12,
+  padding: '12px 14px',
   color: '#e8e8ed',
-  fontSize: 14,
-  lineHeight: 1.6,
-  minHeight: 120,
-  resize: 'vertical',
+  fontSize: 15,
   outline: 'none',
 }
 
@@ -639,99 +615,9 @@ const amberButton: CSSProperties = {
   background: 'var(--amber)',
   color: '#1a1300',
   border: 'none',
-  borderRadius: 10,
-  padding: '9px 20px',
-  fontSize: 14,
+  borderRadius: 12,
+  padding: '12px 22px',
+  fontSize: 15,
   fontWeight: 600,
-}
-
-const ghostButton: CSSProperties = {
-  background: 'transparent',
-  color: '#9aa0b4',
-  border: '1px solid #24263a',
-  borderRadius: 10,
-  padding: '9px 20px',
-  fontSize: 14,
-  fontWeight: 500,
-}
-
-const textButton: CSSProperties = {
-  background: 'transparent',
-  color: '#9aa0b4',
-  border: 'none',
-  padding: '6px 6px',
-  fontSize: 13,
-  fontWeight: 500,
-}
-
-const textInput: CSSProperties = {
-  background: '#0a0b14',
-  border: '1px solid #24263a',
-  borderRadius: 10,
-  padding: '10px 12px',
-  color: '#e8e8ed',
-  fontSize: 14,
-  outline: 'none',
-}
-
-const backdrop: CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  background: 'rgba(4,5,12,0.6)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 50,
-  padding: 24,
-}
-
-const modalCard: CSSProperties = {
-  width: '100%',
-  maxWidth: 380,
-  background: 'var(--sidebar-bg)',
-  border: '1px solid #1f2235',
-  borderRadius: 16,
-  padding: 22,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 10,
-}
-
-const pulsingDot: CSSProperties = {
-  width: 10,
-  height: 10,
-  borderRadius: '50%',
-  background: 'var(--amber)',
-  animation: 'voi-pulse 1.1s ease-in-out infinite',
-}
-
-const spinner: CSSProperties = {
-  width: 28,
-  height: 28,
-  borderRadius: '50%',
-  border: '3px solid #1f2235',
-  borderTopColor: 'var(--amber)',
-  animation: 'voi-spin 0.8s linear infinite',
-}
-
-const errorBanner: CSSProperties = {
-  margin: '0 0 12px',
-  padding: '10px 14px',
-  borderRadius: 10,
-  background: 'rgba(224,108,117,0.1)',
-  border: '1px solid rgba(224,108,117,0.35)',
-  color: '#e06c75',
-  fontSize: 13,
-}
-
-// Inject keyframes once
-const styleId = 'voi-keyframes'
-if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
-  const style = document.createElement('style')
-  style.id = styleId
-  style.textContent = `
-    @keyframes voi-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
-    @keyframes voi-spin { to { transform: rotate(360deg); } }
-  `
-  document.head.appendChild(style)
+  whiteSpace: 'nowrap',
 }
