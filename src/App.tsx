@@ -62,118 +62,13 @@ function formatDate(ts: number): string {
   })
 }
 
-function previewText(text: string): string {
-  const trimmed = text.trim()
-  if (!trimmed) return 'Empty recording'
-  return trimmed.length > 60 ? `${trimmed.slice(0, 60)}…` : trimmed
-}
-
 // ---------------------------------------------------------------------------
-// VoiLogo
+// Waveform — slim canvas reading bars from an AnalyserNode
 // ---------------------------------------------------------------------------
 
-function VoiLogo() {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
-        <rect x="2" y="9" width="2.5" height="6" rx="1.25" fill="var(--amber)" />
-        <rect x="6.5" y="5" width="2.5" height="14" rx="1.25" fill="var(--amber)" />
-        <rect x="11" y="2" width="2.5" height="20" rx="1.25" fill="var(--amber)" />
-        <rect x="15.5" y="5" width="2.5" height="14" rx="1.25" fill="var(--amber)" />
-        <rect x="20" y="9" width="2.5" height="6" rx="1.25" fill="var(--amber)" />
-      </svg>
-      <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em' }}>
-        Voi
-      </span>
-    </div>
-  )
-}
+const BAR_COUNT = 40
 
-// ---------------------------------------------------------------------------
-// DictationSurface
-// ---------------------------------------------------------------------------
-
-function DictationSurface({
-  latest,
-  copied,
-  onCopy,
-  onStart,
-}: {
-  latest: Entry | null
-  copied: boolean
-  onCopy: () => void
-  onStart: () => void
-}) {
-  return (
-    <div style={dictationShell}>
-      <div style={statusPill}>
-        <span style={tinyDot} />
-        Ready across your Mac
-      </div>
-
-      <div style={composer}>
-        <textarea
-          readOnly
-          value={
-            latest?.text ??
-            'Say it naturally. Voi removes pauses, fixes changed thoughts, and formats the final text.'
-          }
-          style={{
-            ...composerText,
-            color: latest ? '#f3f4f8' : '#6b7186',
-          }}
-        />
-        <div style={composerFooter}>
-          <span style={{ color: '#6b7186', fontSize: 13 }}>
-            {latest
-              ? `${formatTimer(latest.durationMs)} clipped to clipboard`
-              : 'Try: Let’s meet at 2, actually 3.'}
-          </span>
-          <button style={toolbarButton} onClick={onCopy} disabled={!latest}>
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-      </div>
-
-      <button style={flowMicButton} aria-label="Start dictation" onClick={onStart}>
-        <MicIcon />
-      </button>
-      <span style={{ color: '#9aa0b4', fontSize: 15 }}>
-        Click to speak
-      </span>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Nebula — a cluster of soft, pulsing dots orbiting inside a circle.
-// Web port of the iOS `OrbitDotsCircle`, made audio-reactive: the overall
-// mic level pushes the dots outward and brightens them while you speak.
-// ---------------------------------------------------------------------------
-
-interface DotConfig {
-  radius: number
-  size: number
-  speed: number
-  phase: number
-  opacity: number
-}
-
-// 6 dots, each with its own orbit radius, base size, angular speed, starting
-// phase and opacity. The variety of speeds/radii gives it a drifting feel
-// rather than a rigid spinner. Radii are in units of the base orbit radius.
-const DOT_CONFIGS: DotConfig[] = [
-  { radius: 0.82, size: 3.5, speed: 1.1, phase: 0.0, opacity: 0.95 },
-  { radius: 0.64, size: 2.5, speed: 1.7, phase: 0.4, opacity: 0.7 },
-  { radius: 1.0, size: 2.0, speed: 0.85, phase: 0.9, opacity: 0.55 },
-  { radius: 0.55, size: 3.0, speed: 2.2, phase: 1.4, opacity: 0.8 },
-  { radius: 0.91, size: 2.0, speed: 1.45, phase: 1.9, opacity: 0.6 },
-  { radius: 0.73, size: 2.5, speed: 0.95, phase: 2.5, opacity: 0.75 },
-]
-
-const AMBER_RGB = '246,185,59'
-
-function Nebula({ analyser, size = 140 }: { analyser: AnalyserNode | null; size?: number }) {
+function Waveform({ analyser }: { analyser: AnalyserNode | null }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -184,7 +79,6 @@ function Nebula({ analyser, size = 140 }: { analyser: AnalyserNode | null; size?
 
     let raf = 0
     const data = analyser ? new Uint8Array(analyser.frequencyBinCount) : null
-    let level = 0 // smoothed mic level, 0..1
 
     const render = () => {
       const dpr = window.devicePixelRatio || 1
@@ -197,249 +91,32 @@ function Nebula({ analyser, size = 140 }: { analyser: AnalyserNode | null; size?
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, width, height)
 
-      // Average mic amplitude -> smoothed level.
-      if (analyser && data) {
-        analyser.getByteFrequencyData(data)
-        let sum = 0
-        for (let i = 0; i < data.length; i++) sum += data[i]
-        const avg = sum / data.length / 255
-        level += (avg - level) * 0.25
-      }
+      if (analyser && data) analyser.getByteFrequencyData(data)
 
-      const cx = width / 2
-      const cy = height / 2
-      const t = performance.now() / 1000
-      // Base orbit radius drifts outward as you speak.
-      const baseRadius = (Math.min(width, height) / 2) * (0.28 + 0.5 * level)
+      const gap = 3
+      const barWidth = (width - gap * (BAR_COUNT - 1)) / BAR_COUNT
+      const step = data ? Math.floor(data.length / BAR_COUNT) : 0
 
-      // Faint background disc.
-      ctx.beginPath()
-      ctx.arc(cx, cy, Math.min(width, height) / 2, 0, Math.PI * 2)
-      ctx.fillStyle = `rgba(${AMBER_RGB},0.05)`
-      ctx.fill()
-
-      ctx.shadowColor = `rgba(${AMBER_RGB},0.9)`
-
-      for (const cfg of DOT_CONFIGS) {
-        const angle = t * cfg.speed + cfg.phase
-        const x = cx + baseRadius * cfg.radius * Math.cos(angle)
-        const y = cy + baseRadius * cfg.radius * Math.sin(angle)
-        // Second sine wave (2.3x orbit speed) makes each dot breathe.
-        const pulse = (Math.sin(t * cfg.speed * 2.3 + cfg.phase) + 1) / 2
-        const brightness = cfg.opacity * (0.4 + 0.6 * pulse) * (0.55 + 0.45 * level)
-        const dotSize = cfg.size * (0.75 + 0.25 * pulse) * (size / 36)
-
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const amplitude = data && step > 0 ? data[i * step] / 255 : 0
+        const barHeight = Math.max(2, amplitude * height)
+        const x = i * (barWidth + gap)
+        const y = (height - barHeight) / 2
+        ctx.fillStyle = '#f6b93b'
         ctx.beginPath()
-        ctx.arc(x, y, dotSize, 0, Math.PI * 2)
-        ctx.fillStyle = `rgba(${AMBER_RGB},${brightness})`
-        ctx.shadowBlur = 8 + 6 * pulse
+        ctx.roundRect(x, y, barWidth, barHeight, Math.min(barWidth / 2, 2))
         ctx.fill()
       }
-      ctx.shadowBlur = 0
 
       raf = requestAnimationFrame(render)
     }
 
     raf = requestAnimationFrame(render)
     return () => cancelAnimationFrame(raf)
-  }, [analyser, size])
+  }, [analyser])
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{ width: size, height: size, display: 'block', margin: '0 auto' }}
-    />
-  )
-}
-
-// ---------------------------------------------------------------------------
-// RecordingOverlay — bottom sheet
-// ---------------------------------------------------------------------------
-
-function RecordingOverlay({
-  analyser,
-  elapsedMs,
-  onCancel,
-  onDone,
-}: {
-  analyser: AnalyserNode | null
-  elapsedMs: number
-  onCancel: () => void
-  onDone: () => void
-}) {
-  return (
-    <div style={overlayBackdrop}>
-      <div style={bottomSheet}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={pulsingDot} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ color: '#9aa0b4', fontSize: 13 }}>Listening</span>
-            <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 22, fontWeight: 600 }}>
-              {formatTimer(elapsedMs)}
-            </span>
-          </div>
-        </div>
-        <Nebula analyser={analyser} />
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-          <button style={ghostButton} onClick={onCancel}>
-            Cancel
-          </button>
-          <button style={amberButton} onClick={onDone}>
-            Polish
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// TranscribingOverlay
-// ---------------------------------------------------------------------------
-
-function TranscribingOverlay() {
-  return (
-    <div style={overlayBackdrop}>
-      <div
-        style={{
-          ...bottomSheet,
-          alignItems: 'center',
-          gap: 18,
-          paddingBottom: 40,
-        }}
-      >
-        <span style={spinner} />
-        <span style={{ letterSpacing: '0.18em', fontSize: 13, color: 'var(--amber)' }}>
-          POLISHING
-        </span>
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// SettingsModal
-// ---------------------------------------------------------------------------
-
-function SettingsModal({
-  initialKey,
-  onClose,
-  onSave,
-}: {
-  initialKey: string
-  onClose: () => void
-  onSave: (key: string) => void
-}) {
-  const [value, setValue] = useState(initialKey)
-
-  return (
-    <div style={overlayBackdrop} onClick={onClose}>
-      <div style={modalCard} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Settings</h2>
-        <label style={{ fontSize: 13, color: '#9aa0b4' }}>Cartesia API key</label>
-        <input
-          type="password"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="sk_car_..."
-          style={textInput}
-          autoFocus
-        />
-        <span style={{ fontSize: 12, color: '#6b7186' }}>
-          Used only in your browser.
-        </span>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button style={ghostButton} onClick={onClose}>
-            Cancel
-          </button>
-          <button style={amberButton} onClick={() => onSave(value.trim())}>
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// EntryDetail
-// ---------------------------------------------------------------------------
-
-function EntryDetail({
-  entry,
-  onSave,
-  onDelete,
-}: {
-  entry: Entry
-  onSave: (text: string) => void
-  onDelete: () => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(entry.text)
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    setEditing(false)
-    setDraft(entry.text)
-    setCopied(false)
-  }, [entry.id, entry.text])
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(entry.text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      // clipboard may be unavailable
-    }
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 32, gap: 18 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <span style={{ fontSize: 13, color: '#6b7186' }}>
-          {formatDate(entry.createdAt)}
-        </span>
-        <span style={{ fontSize: 13, color: '#6b7186' }}>
-          {formatTimer(entry.durationMs)}
-        </span>
-      </div>
-
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button style={toolbarButton} onClick={copy}>
-          {copied ? 'Copied' : 'Copy'}
-        </button>
-        {editing ? (
-          <button
-            style={toolbarButton}
-            onClick={() => {
-              onSave(draft)
-              setEditing(false)
-            }}
-          >
-            Save
-          </button>
-        ) : (
-          <button style={toolbarButton} onClick={() => setEditing(true)}>
-            Edit
-          </button>
-        )}
-        <button style={{ ...toolbarButton, color: '#e06c75' }} onClick={onDelete}>
-          Delete
-        </button>
-      </div>
-
-      {editing ? (
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          style={transcriptTextarea}
-          autoFocus
-        />
-      ) : (
-        <div style={transcriptView}>{entry.text || 'Empty recording'}</div>
-      )}
-    </div>
+    <canvas ref={canvasRef} style={{ width: '100%', height: 40, display: 'block' }} />
   )
 }
 
@@ -451,14 +128,14 @@ type RecorderState = 'idle' | 'recording' | 'transcribing'
 
 export default function App() {
   const [entries, setEntries] = useState<Entry[]>(() => loadEntries())
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [openId, setOpenId] = useState<string | null>(null)
   const [cartesiaKey, setCartesiaKey] = useState<string>(() => loadCartesiaKey())
+  const [keyDraft, setKeyDraft] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [recorderState, setRecorderState] = useState<RecorderState>('idle')
   const [elapsedMs, setElapsedMs] = useState(0)
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [copiedLatest, setCopiedLatest] = useState(false)
 
   const streamRef = useRef<MediaStream | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
@@ -471,24 +148,6 @@ export default function App() {
   useEffect(() => {
     saveEntries(entries)
   }, [entries])
-
-  const selected = useMemo(
-    () => entries.find((e) => e.id === selectedId) ?? null,
-    [entries, selectedId],
-  )
-
-  const latest = entries[0] ?? null
-
-  const copyLatest = useCallback(async () => {
-    if (!latest) return
-    try {
-      await navigator.clipboard.writeText(latest.text)
-      setCopiedLatest(true)
-      setTimeout(() => setCopiedLatest(false), 1500)
-    } catch {
-      setError('Clipboard access is unavailable in this browser.')
-    }
-  }, [latest])
 
   const teardown = useCallback(() => {
     if (timerRef.current !== null) {
@@ -507,6 +166,7 @@ export default function App() {
 
   const startRecording = useCallback(async () => {
     if (!cartesiaKey) {
+      setKeyDraft('')
       setSettingsOpen(true)
       return
     }
@@ -552,8 +212,7 @@ export default function App() {
     const durationMs = Date.now() - startTimeRef.current
 
     recorder.onstop = async () => {
-      const tracksStream = streamRef.current
-      tracksStream?.getTracks().forEach((t) => t.stop())
+      streamRef.current?.getTracks().forEach((t) => t.stop())
       streamRef.current = null
       if (audioCtxRef.current) {
         audioCtxRef.current.close().catch(() => {})
@@ -579,14 +238,7 @@ export default function App() {
           createdAt: Date.now(),
         }
         setEntries((prev) => [entry, ...prev])
-        setSelectedId(null)
-        try {
-          await navigator.clipboard.writeText(text)
-          setCopiedLatest(true)
-          setTimeout(() => setCopiedLatest(false), 1500)
-        } catch {
-          // Clipboard is a convenience; keep the transcript even if copy fails.
-        }
+        setOpenId(entry.id)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Transcription failed.')
       } finally {
@@ -616,137 +268,235 @@ export default function App() {
     }
   }, [teardown])
 
-  const deleteEntry = useCallback(
-    (id: string) => {
-      setEntries((prev) => prev.filter((e) => e.id !== id))
-      setSelectedId((cur) => (cur === id ? null : cur))
-    },
-    [],
-  )
+  const deleteEntry = useCallback((id: string) => {
+    setEntries((prev) => prev.filter((e) => e.id !== id))
+    setOpenId((cur) => (cur === id ? null : cur))
+  }, [])
 
   const updateEntry = useCallback((id: string, text: string) => {
     setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, text } : e)))
   }, [])
 
   return (
-    <div style={{ display: 'flex', height: '100%', width: '100%' }}>
-      {/* Sidebar */}
-      <aside style={sidebar}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <VoiLogo />
+    <div style={shell}>
+      <div style={column}>
+        {/* Header */}
+        <header style={header}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <rect x="2" y="9" width="2.5" height="6" rx="1.25" fill="var(--amber)" />
+              <rect x="6.5" y="5" width="2.5" height="14" rx="1.25" fill="var(--amber)" />
+              <rect x="11" y="2" width="2.5" height="20" rx="1.25" fill="var(--amber)" />
+              <rect x="15.5" y="5" width="2.5" height="14" rx="1.25" fill="var(--amber)" />
+              <rect x="20" y="9" width="2.5" height="6" rx="1.25" fill="var(--amber)" />
+            </svg>
+            <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em' }}>
+              Voi
+            </span>
+          </div>
           <button
-            style={iconButton}
-            aria-label="Settings"
-            onClick={() => setSettingsOpen(true)}
+            style={textButton}
+            onClick={() => {
+              setKeyDraft(cartesiaKey)
+              setSettingsOpen(true)
+            }}
           >
-            <GearIcon />
+            Settings
           </button>
-        </div>
+        </header>
 
-        <button style={{ ...amberButton, width: '100%' }} onClick={startRecording}>
-          Start dictation
-        </button>
-
-        <div style={entryList}>
-          {entries.length === 0 ? (
-            <div style={{ color: '#5a6078', fontSize: 13, padding: '8px 4px' }}>
-              No dictations yet.
+        {/* Recorder */}
+        <div style={recorder}>
+          {recorderState === 'recording' ? (
+            <>
+              <div style={timerRow}>
+                <span style={pulsingDot} />
+                <span style={timerText}>{formatTimer(elapsedMs)}</span>
+              </div>
+              <Waveform analyser={analyser} />
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button style={ghostButton} onClick={cancelRecording}>
+                  Cancel
+                </button>
+                <button style={amberButton} onClick={stopRecording}>
+                  Stop
+                </button>
+              </div>
+            </>
+          ) : recorderState === 'transcribing' ? (
+            <div style={transcribing}>
+              <span style={spinner} />
+              <span style={{ letterSpacing: '0.16em', fontSize: 12, color: '#6b7186' }}>
+                TRANSCRIBING
+              </span>
             </div>
           ) : (
+            <button style={recordButton} onClick={startRecording} aria-label="Record">
+              <MicIcon />
+            </button>
+          )}
+        </div>
+
+        {error && <div style={errorBanner}>{error}</div>}
+
+        {/* Entries */}
+        <div style={list}>
+          {entries.length === 0 ? (
+            <p style={emptyText}>Tap the mic and start speaking.</p>
+          ) : (
             entries.map((entry) => (
-              <button
+              <EntryRow
                 key={entry.id}
-                onClick={() => setSelectedId(entry.id)}
-                style={{
-                  ...entryItem,
-                  ...(entry.id === selectedId ? entryItemActive : null),
-                }}
-              >
-                <span style={{ fontSize: 14, color: '#e8e8ed' }}>
-                  {previewText(entry.text)}
-                </span>
-                <span style={{ fontSize: 11, color: '#6b7186' }}>
-                  {formatDate(entry.createdAt)} · {formatTimer(entry.durationMs)}
-                </span>
-              </button>
+                entry={entry}
+                open={entry.id === openId}
+                onToggle={() =>
+                  setOpenId((cur) => (cur === entry.id ? null : entry.id))
+                }
+                onSave={(text) => updateEntry(entry.id, text)}
+                onDelete={() => deleteEntry(entry.id)}
+              />
             ))
           )}
         </div>
-      </aside>
-
-      {/* Main */}
-      <main style={mainArea}>
-        {error && <div style={errorBanner}>{error}</div>}
-        {selected ? (
-          <EntryDetail
-            entry={selected}
-            onSave={(text) => updateEntry(selected.id, text)}
-            onDelete={() => deleteEntry(selected.id)}
-          />
-        ) : (
-          <DictationSurface
-            latest={latest}
-            copied={copiedLatest}
-            onCopy={copyLatest}
-            onStart={startRecording}
-          />
-        )}
-      </main>
-
-      {recorderState === 'recording' && (
-        <RecordingOverlay
-          analyser={analyser}
-          elapsedMs={elapsedMs}
-          onCancel={cancelRecording}
-          onDone={stopRecording}
-        />
-      )}
-      {recorderState === 'transcribing' && <TranscribingOverlay />}
+      </div>
 
       {settingsOpen && (
-        <SettingsModal
-          initialKey={cartesiaKey}
-          onClose={() => setSettingsOpen(false)}
-          onSave={(key) => {
-            setCartesiaKey(key)
-            localStorage.setItem(CARTESIA_KEY, key)
-            setSettingsOpen(false)
-          }}
-        />
+        <div style={backdrop} onClick={() => setSettingsOpen(false)}>
+          <div style={modalCard} onClick={(e) => e.stopPropagation()}>
+            <span style={{ fontSize: 13, color: '#9aa0b4' }}>Cartesia API key</span>
+            <input
+              type="password"
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.target.value)}
+              placeholder="sk_car_..."
+              style={textInput}
+              autoFocus
+            />
+            <span style={{ fontSize: 12, color: '#5a6078' }}>
+              Stored only in your browser.
+            </span>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button style={ghostButton} onClick={() => setSettingsOpen(false)}>
+                Cancel
+              </button>
+              <button
+                style={amberButton}
+                onClick={() => {
+                  const trimmed = keyDraft.trim()
+                  setCartesiaKey(trimmed)
+                  localStorage.setItem(CARTESIA_KEY, trimmed)
+                  setSettingsOpen(false)
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Icons
+// EntryRow — collapsed preview that expands inline
 // ---------------------------------------------------------------------------
 
-function MicIcon() {
+function EntryRow({
+  entry,
+  open,
+  onToggle,
+  onSave,
+  onDelete,
+}: {
+  entry: Entry
+  open: boolean
+  onToggle: () => void
+  onSave: (text: string) => void
+  onDelete: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(entry.text)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!open) setEditing(false)
+  }, [open])
+
+  useEffect(() => {
+    setDraft(entry.text)
+  }, [entry.text])
+
+  const preview = useMemo(() => {
+    const t = entry.text.trim()
+    if (!t) return 'Empty recording'
+    return t.length > 80 ? `${t.slice(0, 80)}…` : t
+  }, [entry.text])
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(entry.text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+
   return (
-    <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
-      <rect x="9" y="2" width="6" height="12" rx="3" fill="#0a0b14" />
-      <path
-        d="M5 11a7 7 0 0 0 14 0"
-        stroke="#0a0b14"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <line x1="12" y1="18" x2="12" y2="22" stroke="#0a0b14" strokeWidth="2" strokeLinecap="round" />
-    </svg>
+    <div style={{ ...rowCard, ...(open ? rowCardOpen : null) }}>
+      <button style={rowHead} onClick={onToggle}>
+        <span style={rowPreview}>{open ? entry.text || 'Empty recording' : preview}</span>
+        <span style={rowMeta}>
+          {formatDate(entry.createdAt)} · {formatTimer(entry.durationMs)}
+        </span>
+      </button>
+
+      {open && (
+        <div style={rowBody}>
+          {editing && (
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              style={textarea}
+              autoFocus
+            />
+          )}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button style={textButton} onClick={copy}>
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+            {editing ? (
+              <button
+                style={textButton}
+                onClick={() => {
+                  onSave(draft)
+                  setEditing(false)
+                }}
+              >
+                Save
+              </button>
+            ) : (
+              <button style={textButton} onClick={() => setEditing(true)}>
+                Edit
+              </button>
+            )}
+            <button style={{ ...textButton, color: '#e06c75' }} onClick={onDelete}>
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
-function GearIcon() {
+function MicIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="3" stroke="#9aa0b4" strokeWidth="2" />
-      <path
-        d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"
-        stroke="#9aa0b4"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+      <rect x="9" y="2" width="6" height="12" rx="3" fill="#0a0b14" />
+      <path d="M5 11a7 7 0 0 0 14 0" stroke="#0a0b14" strokeWidth="2" strokeLinecap="round" />
+      <line x1="12" y1="18" x2="12" y2="22" stroke="#0a0b14" strokeWidth="2" strokeLinecap="round" />
     </svg>
   )
 }
@@ -755,47 +505,137 @@ function GearIcon() {
 // Styles
 // ---------------------------------------------------------------------------
 
-const sidebar: CSSProperties = {
-  width: 260,
-  flexShrink: 0,
-  background: 'var(--sidebar-bg)',
-  borderRight: '1px solid #1a1c2b',
+const shell: CSSProperties = {
+  height: '100%',
+  width: '100%',
   display: 'flex',
-  flexDirection: 'column',
-  gap: 16,
-  padding: 16,
-}
-
-const mainArea: CSSProperties = {
-  flex: 1,
+  justifyContent: 'center',
   background: 'var(--bg)',
-  position: 'relative',
-  overflow: 'auto',
-}
-
-const entryList: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 4,
   overflowY: 'auto',
-  flex: 1,
-  marginRight: -8,
-  paddingRight: 8,
 }
 
-const entryItem: CSSProperties = {
+const column: CSSProperties = {
+  width: '100%',
+  maxWidth: 560,
+  padding: '0 24px 64px',
   display: 'flex',
   flexDirection: 'column',
-  gap: 4,
+}
+
+const header: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: '22px 0',
+}
+
+const recorder: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 18,
+  minHeight: 180,
+  padding: '12px 0 28px',
+}
+
+const recordButton: CSSProperties = {
+  width: 76,
+  height: 76,
+  borderRadius: '50%',
+  background: 'var(--amber)',
+  border: 'none',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  transition: 'transform 0.15s ease',
+}
+
+const timerRow: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+}
+
+const timerText: CSSProperties = {
+  fontVariantNumeric: 'tabular-nums',
+  fontSize: 20,
+  fontWeight: 600,
+}
+
+const transcribing: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  gap: 14,
+}
+
+const list: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+}
+
+const emptyText: CSSProperties = {
+  textAlign: 'center',
+  color: '#5a6078',
+  fontSize: 14,
+  margin: '8px 0',
+}
+
+const rowCard: CSSProperties = {
+  border: '1px solid #16182a',
+  borderRadius: 12,
+  background: 'transparent',
+  overflow: 'hidden',
+}
+
+const rowCardOpen: CSSProperties = {
+  background: '#0d0e18',
+  borderColor: '#1f2235',
+}
+
+const rowHead: CSSProperties = {
+  width: '100%',
   textAlign: 'left',
   background: 'transparent',
   border: 'none',
-  borderRadius: 8,
-  padding: '10px 10px',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 5,
+  padding: '13px 15px',
 }
 
-const entryItemActive: CSSProperties = {
-  background: '#16182a',
+const rowPreview: CSSProperties = {
+  fontSize: 14,
+  lineHeight: 1.6,
+  color: '#e8e8ed',
+  whiteSpace: 'pre-wrap',
+}
+
+const rowMeta: CSSProperties = {
+  fontSize: 11,
+  color: '#5a6078',
+}
+
+const rowBody: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 12,
+  padding: '0 15px 14px',
+}
+
+const textarea: CSSProperties = {
+  background: '#0a0b14',
+  border: '1px solid #24263a',
+  borderRadius: 10,
+  padding: 12,
+  color: '#e8e8ed',
+  fontSize: 14,
+  lineHeight: 1.6,
+  minHeight: 120,
+  resize: 'vertical',
+  outline: 'none',
 }
 
 const amberButton: CSSProperties = {
@@ -803,7 +643,7 @@ const amberButton: CSSProperties = {
   color: '#1a1300',
   border: 'none',
   borderRadius: 10,
-  padding: '10px 18px',
+  padding: '9px 20px',
   fontSize: 14,
   fontWeight: 600,
 }
@@ -811,145 +651,20 @@ const amberButton: CSSProperties = {
 const ghostButton: CSSProperties = {
   background: 'transparent',
   color: '#9aa0b4',
-  border: '1px solid #2a2d40',
+  border: '1px solid #24263a',
   borderRadius: 10,
-  padding: '10px 18px',
+  padding: '9px 20px',
   fontSize: 14,
   fontWeight: 500,
 }
 
-const toolbarButton: CSSProperties = {
-  background: '#16182a',
-  color: '#e8e8ed',
-  border: '1px solid #24263a',
-  borderRadius: 8,
-  padding: '7px 14px',
+const textButton: CSSProperties = {
+  background: 'transparent',
+  color: '#9aa0b4',
+  border: 'none',
+  padding: '6px 6px',
   fontSize: 13,
   fontWeight: 500,
-}
-
-const iconButton: CSSProperties = {
-  background: 'transparent',
-  border: 'none',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: 6,
-  borderRadius: 8,
-}
-
-const dictationShell: CSSProperties = {
-  height: '100%',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 18,
-  padding: 32,
-}
-
-const statusPill: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  background: '#121420',
-  border: '1px solid #23263a',
-  borderRadius: 999,
-  padding: '7px 12px',
-  color: '#b9bfd0',
-  fontSize: 13,
-  boxShadow: '0 10px 40px rgba(0,0,0,0.18)',
-}
-
-const tinyDot: CSSProperties = {
-  width: 7,
-  height: 7,
-  borderRadius: '50%',
-  background: '#71d38a',
-}
-
-const composer: CSSProperties = {
-  width: 'min(760px, 100%)',
-  minHeight: 260,
-  background: '#10121d',
-  border: '1px solid #24263a',
-  borderRadius: 18,
-  display: 'flex',
-  flexDirection: 'column',
-  boxShadow: '0 28px 90px rgba(0,0,0,0.28)',
-  overflow: 'hidden',
-}
-
-const composerText: CSSProperties = {
-  flex: 1,
-  width: '100%',
-  minHeight: 210,
-  background: 'transparent',
-  border: 'none',
-  color: '#f3f4f8',
-  resize: 'none',
-  outline: 'none',
-  padding: 24,
-  fontSize: 22,
-  lineHeight: 1.45,
-}
-
-const composerFooter: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 16,
-  borderTop: '1px solid #202235',
-  padding: '12px 14px 12px 18px',
-}
-
-const flowMicButton: CSSProperties = {
-  width: 78,
-  height: 78,
-  borderRadius: '50%',
-  background: 'var(--amber)',
-  border: 'none',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  boxShadow: '0 0 0 0 rgba(246,185,59,0.5)',
-}
-
-const overlayBackdrop: CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  background: 'rgba(4,5,12,0.55)',
-  display: 'flex',
-  alignItems: 'flex-end',
-  justifyContent: 'center',
-  zIndex: 50,
-}
-
-const bottomSheet: CSSProperties = {
-  width: '100%',
-  maxWidth: 560,
-  background: 'var(--sidebar-bg)',
-  borderTop: '1px solid #1f2235',
-  borderTopLeftRadius: 20,
-  borderTopRightRadius: 20,
-  padding: '24px 28px 28px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 20,
-  animation: 'voi-slide-up 0.22s ease-out',
-}
-
-const modalCard: CSSProperties = {
-  width: '100%',
-  maxWidth: 420,
-  margin: 'auto',
-  background: 'var(--sidebar-bg)',
-  border: '1px solid #1f2235',
-  borderRadius: 16,
-  padding: 24,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 12,
 }
 
 const textInput: CSSProperties = {
@@ -962,51 +677,52 @@ const textInput: CSSProperties = {
   outline: 'none',
 }
 
-const transcriptView: CSSProperties = {
-  flex: 1,
-  fontSize: 16,
-  lineHeight: 1.7,
-  color: '#e8e8ed',
-  whiteSpace: 'pre-wrap',
-  overflowY: 'auto',
+const backdrop: CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(4,5,12,0.6)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 50,
+  padding: 24,
 }
 
-const transcriptTextarea: CSSProperties = {
-  flex: 1,
-  background: '#0a0b14',
-  border: '1px solid #24263a',
-  borderRadius: 12,
-  padding: 16,
-  color: '#e8e8ed',
-  fontSize: 16,
-  lineHeight: 1.7,
-  resize: 'none',
-  outline: 'none',
+const modalCard: CSSProperties = {
+  width: '100%',
+  maxWidth: 380,
+  background: 'var(--sidebar-bg)',
+  border: '1px solid #1f2235',
+  borderRadius: 16,
+  padding: 22,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 10,
 }
 
 const pulsingDot: CSSProperties = {
-  width: 12,
-  height: 12,
+  width: 10,
+  height: 10,
   borderRadius: '50%',
   background: 'var(--amber)',
   animation: 'voi-pulse 1.1s ease-in-out infinite',
 }
 
 const spinner: CSSProperties = {
-  width: 34,
-  height: 34,
+  width: 28,
+  height: 28,
   borderRadius: '50%',
-  border: '3px solid #2a2d40',
+  border: '3px solid #1f2235',
   borderTopColor: 'var(--amber)',
   animation: 'voi-spin 0.8s linear infinite',
 }
 
 const errorBanner: CSSProperties = {
-  margin: 16,
+  margin: '0 0 12px',
   padding: '10px 14px',
   borderRadius: 10,
-  background: 'rgba(224,108,117,0.12)',
-  border: '1px solid rgba(224,108,117,0.4)',
+  background: 'rgba(224,108,117,0.1)',
+  border: '1px solid rgba(224,108,117,0.35)',
   color: '#e06c75',
   fontSize: 13,
 }
@@ -1017,7 +733,6 @@ if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
   const style = document.createElement('style')
   style.id = styleId
   style.textContent = `
-    @keyframes voi-slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
     @keyframes voi-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
     @keyframes voi-spin { to { transform: rotate(360deg); } }
   `
