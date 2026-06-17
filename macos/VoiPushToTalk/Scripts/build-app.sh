@@ -53,7 +53,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key>
   <string>app.voi.push-to-talk</string>
   <key>CFBundleIconFile</key>
-  <string>Voi</string>
+  <string>Voi.icns</string>
   <key>CFBundleName</key>
   <string>Voi</string>
   <key>CFBundlePackageType</key>
