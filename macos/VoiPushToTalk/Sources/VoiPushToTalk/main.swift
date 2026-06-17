@@ -651,7 +651,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     private func showRecordingOverlay(status: String) {
         if recordingOverlayWindow == nil {
-            let size = NSSize(width: 164, height: 56)
+            let size = NSSize(width: 148, height: 50)
             let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
             let origin = NSPoint(
                 x: screenFrame.midX - size.width / 2,
@@ -677,7 +677,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
             let label = uiLabel(status, size: 14, weight: .regular, color: primaryTextColor)
             label.alignment = .center
-            label.frame = NSRect(x: 48, y: 19, width: 104, height: 18)
+            label.frame = NSRect(x: 43, y: 16, width: 92, height: 18)
             content.addSubview(label)
             recordingOverlayStatusLabel = label
 
