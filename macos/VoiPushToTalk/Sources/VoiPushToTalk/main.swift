@@ -106,11 +106,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private var eventLogScrollView: NSScrollView?
     private var diagnosticsToggleButton: NSButton?
     private var manualDictationButton: NSButton?
+    private var overviewTabButton: NSButton?
+    private var settingsTabButton: NSButton?
+    private var settingsSummaryLabel: NSTextField?
+    private var overviewViews: [NSView] = []
+    private var settingsViews: [NSView] = []
     private var recentEvents: [String] = []
     private var notes: [RecordedNote] = []
     private var hasRequestedMicrophoneThisSession = false
     private var diagnosticsExpanded = false
     private var hotKeyDiagnosticsMessage = "Shortcut status pending."
+    private var showingSettingsTab = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -958,8 +964,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         brand.frame = NSRect(x: columnX + 34, y: 679, width: 120, height: 28)
         content.addSubview(brand)
 
+        let overviewTab = makeButton(
+            title: "Overview",
+            frame: NSRect(x: columnX + 238, y: 676, width: 110, height: 28),
+            action: #selector(showOverviewTab)
+        )
+        content.addSubview(overviewTab)
+        overviewTabButton = overviewTab
+
+        let settingsTab = makeButton(
+            title: "Settings",
+            frame: NSRect(x: columnX + 352, y: 676, width: 110, height: 28),
+            action: #selector(showSettingsTab)
+        )
+        content.addSubview(settingsTab)
+        settingsTabButton = settingsTab
+
         let status = uiLabel("Ready", size: 12.5, weight: .medium, color: primaryTextColor)
-        status.frame = NSRect(x: columnX + 372, y: 676, width: 152, height: 28)
+        status.frame = NSRect(x: columnX + 468, y: 676, width: 56, height: 28)
         status.alignment = .center
         status.wantsLayer = true
         status.layer?.cornerRadius = 14
@@ -983,22 +1005,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         permission.frame = NSRect(x: columnX, y: 538, width: 120, height: 18)
         content.addSubview(permission)
         permissionLabel = permission
+        settingsViews.append(permission)
 
         let mic = makeChip(frame: NSRect(x: columnX, y: 498, width: 164, height: 30))
         content.addSubview(mic)
         micChip = mic
+        settingsViews.append(mic)
 
         let accessibility = makeChip(frame: NSRect(x: columnX + 180, y: 498, width: 164, height: 30))
         content.addSubview(accessibility)
         accessibilityChip = accessibility
+        settingsViews.append(accessibility)
 
         let inputEvents = makeChip(frame: NSRect(x: columnX + 360, y: 498, width: 164, height: 30))
         content.addSubview(inputEvents)
         inputChip = inputEvents
+        settingsViews.append(inputEvents)
 
         let label = uiLabel("Cartesia API key", size: 12, weight: .medium, color: mutedTextColor)
         label.frame = NSRect(x: columnX, y: 448, width: 160, height: 18)
         content.addSubview(label)
+        settingsViews.append(label)
 
         let input = NSTextField(frame: NSRect(x: columnX, y: 414, width: 360, height: 34))
         let hasSavedKey = UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty == false
@@ -1007,6 +1034,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         styleTextField(input)
         content.addSubview(input)
         keyField = input
+        settingsViews.append(input)
 
         let saveButton = makeButton(
             title: "Save key",
@@ -1016,6 +1044,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         )
         saveButton.keyEquivalent = "\r"
         content.addSubview(saveButton)
+        settingsViews.append(saveButton)
 
         let autoPasteButton = makeButton(
             title: AXIsProcessTrusted() ? "Auto-Paste on" : "Enable Auto-Paste",
@@ -1024,6 +1053,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             accent: !AXIsProcessTrusted()
         )
         content.addSubview(autoPasteButton)
+        settingsViews.append(autoPasteButton)
 
         let hideButton = makeButton(
             title: "Hide",
@@ -1031,6 +1061,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             action: #selector(hideSetupWindow)
         )
         content.addSubview(hideButton)
+        settingsViews.append(hideButton)
 
         let testButton = makeButton(
             title: "Test paste",
@@ -1038,6 +1069,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             action: #selector(testPaste)
         )
         content.addSubview(testButton)
+        settingsViews.append(testButton)
 
         let manualButton = makeButton(
             title: "Start dictation",
@@ -1047,10 +1079,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         )
         content.addSubview(manualButton)
         manualDictationButton = manualButton
+        settingsViews.append(manualButton)
 
         let composerLabel = uiLabel("Latest note", size: 12, weight: .medium, color: mutedTextColor)
         composerLabel.frame = NSRect(x: columnX, y: 320, width: 120, height: 18)
         content.addSubview(composerLabel)
+        overviewViews.append(composerLabel)
 
         let composerScroll = NSScrollView(frame: NSRect(x: columnX, y: 206, width: columnW, height: 102))
         let composerView = NSTextView(frame: composerScroll.bounds)
@@ -1061,11 +1095,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         composerScroll.documentView = composerView
         content.addSubview(composerScroll)
         composerTextView = composerView
+        overviewViews.append(composerScroll)
 
         let shortcut = uiLabel("Waiting for fn/Globe.", size: 12.5, weight: .regular, color: secondaryTextColor)
         shortcut.frame = NSRect(x: columnX, y: 176, width: 330, height: 20)
         content.addSubview(shortcut)
         shortcutLabel = shortcut
+        overviewViews.append(shortcut)
 
         let copyButton = makeButton(
             title: "Copy",
@@ -1073,10 +1109,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             action: #selector(copyLatestNote)
         )
         content.addSubview(copyButton)
+        overviewViews.append(copyButton)
 
         let notesLabel = uiLabel("Recorded notes", size: 12, weight: .semibold, color: secondaryTextColor)
         notesLabel.frame = NSRect(x: columnX, y: 142, width: 220, height: 18)
         content.addSubview(notesLabel)
+        overviewViews.append(notesLabel)
 
         let notesRect = NSRect(x: columnX, y: 20, width: columnW, height: 112)
         let scrollView = NSScrollView(frame: notesRect)
@@ -1087,14 +1125,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         notesScrollView = scrollView
         notesTextView = textView
         refreshNotesView()
+        overviewViews.append(scrollView)
+
+        let settingsSummary = uiLabel("Controls and permissions live here. Turn on Auto-Paste, update your Cartesia key, or inspect diagnostics when something feels off.", size: 13.5, weight: .regular, color: secondaryTextColor)
+        settingsSummary.frame = NSRect(x: columnX, y: 236, width: columnW, height: 52)
+        settingsSummary.lineBreakMode = .byWordWrapping
+        settingsSummary.maximumNumberOfLines = 0
+        content.addSubview(settingsSummary)
+        settingsSummaryLabel = settingsSummary
+        settingsViews.append(settingsSummary)
 
         let diagnosticsButton = makeButton(
             title: "Show diagnostics",
-            frame: NSRect(x: columnX + columnW - 150, y: 136, width: 150, height: 28),
+            frame: NSRect(x: columnX + columnW - 150, y: 236, width: 150, height: 28),
             action: #selector(toggleDiagnostics)
         )
         content.addSubview(diagnosticsButton)
         diagnosticsToggleButton = diagnosticsButton
+        settingsViews.append(diagnosticsButton)
 
         let eventScrollView = NSScrollView(frame: notesRect)
         let eventTextView = NSTextView(frame: eventScrollView.bounds)
@@ -1105,6 +1153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         eventLogScrollView = eventScrollView
         eventLogTextView = eventTextView
         refreshEventLog()
+        settingsViews.append(eventScrollView)
 
         setupWindow = window
         if activate {
@@ -1115,6 +1164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         }
         updateSetupCopy()
         refreshPermissionStatus(eventTapActive: eventTap != nil)
+        updateTabSelection()
         updateDiagnosticsVisibility()
     }
 
@@ -1146,13 +1196,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private func updateSetupCopy() {
         let hasKey = UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty == false
         if hasKey {
-            titleLabel?.stringValue = "Voi is ready"
+            titleLabel?.stringValue = "Voice where you work"
             subtitleLabel?.stringValue = "Hold fn/Globe, speak, release to paste."
             statusLabel?.stringValue = "Ready"
         } else {
             titleLabel?.stringValue = "Set up Voi"
             subtitleLabel?.stringValue = "Add your Cartesia key, then hold fn/Globe to dictate."
             statusLabel?.stringValue = "Waiting for Cartesia API key"
+        }
+    }
+
+    @objc private func showOverviewTab() {
+        showingSettingsTab = false
+        updateTabSelection()
+        updateDiagnosticsVisibility()
+    }
+
+    @objc private func showSettingsTab() {
+        showingSettingsTab = true
+        updateTabSelection()
+        updateDiagnosticsVisibility()
+    }
+
+    private func updateTabSelection() {
+        for view in overviewViews {
+            view.isHidden = showingSettingsTab
+        }
+        for view in settingsViews {
+            view.isHidden = !showingSettingsTab
+        }
+
+        if let overviewTabButton {
+            styleButton(overviewTabButton, accent: !showingSettingsTab)
+        }
+        if let settingsTabButton {
+            styleButton(settingsTabButton, accent: showingSettingsTab)
         }
     }
 
@@ -1214,9 +1292,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 
     private func updateDiagnosticsVisibility() {
-        // Diagnostics shares the notes area, so the dashboard keeps its visual weight on notes by default.
-        eventLogScrollView?.isHidden = !diagnosticsExpanded
-        notesScrollView?.isHidden = diagnosticsExpanded
+        notesScrollView?.isHidden = showingSettingsTab || diagnosticsExpanded
+        eventLogScrollView?.isHidden = !showingSettingsTab || !diagnosticsExpanded
+        settingsSummaryLabel?.isHidden = !showingSettingsTab || diagnosticsExpanded
         diagnosticsToggleButton?.title = diagnosticsExpanded ? "Hide diagnostics" : "Show diagnostics"
         if let diagnosticsToggleButton {
             styleButton(diagnosticsToggleButton)
