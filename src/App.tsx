@@ -3,6 +3,7 @@ import {
   useEffect,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from 'react'
 
 // ---------------------------------------------------------------------------
@@ -30,20 +31,38 @@ function loadEntries(): Entry[] {
   }
 }
 
-function formatDate(ts: number): string {
-  return new Date(ts).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+function smartDate(ts: number): string {
+  const d = new Date(ts)
+  const now = new Date()
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  const sameDay = d.toDateString() === now.toDateString()
+  const yest = new Date(now)
+  yest.setDate(now.getDate() - 1)
+  if (sameDay) return `Today ${time}`
+  if (d.toDateString() === yest.toDateString()) return `Yesterday ${time}`
+  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${time}`
 }
 
+// macOS system-ish tokens
+const C = {
+  accent: '#ffb340', // warm brand amber, slightly desaturated for dark UI
+  accentText: '#241700',
+  green: '#30d158',
+  red: '#ff453a',
+  label: 'rgba(255,255,255,0.92)',
+  secondary: 'rgba(235,235,245,0.6)',
+  tertiary: 'rgba(235,235,245,0.3)',
+  hairline: 'rgba(255,255,255,0.08)',
+  fill: 'rgba(255,255,255,0.06)',
+  fillStrong: 'rgba(255,255,255,0.1)',
+  surface: 'rgba(255,255,255,0.04)',
+}
+
+const drag = { WebkitAppRegion: 'drag' } as unknown as CSSProperties
+const noDrag = { WebkitAppRegion: 'no-drag' } as unknown as CSSProperties
+
 // ---------------------------------------------------------------------------
-// App — the macOS app window. Recording is handled outside the app by the
-// fn/Globe shortcut; this window shows status, the latest note, history,
-// and settings.
+// App
 // ---------------------------------------------------------------------------
 
 type Tab = 'overview' | 'settings'
@@ -51,22 +70,17 @@ type Tab = 'overview' | 'settings'
 export default function App() {
   const [tab, setTab] = useState<Tab>('overview')
   const [entries, setEntries] = useState<Entry[]>(() => loadEntries())
-  const [apiKey, setApiKey] = useState<string>(
-    () => localStorage.getItem(KEY_KEY) ?? '',
-  )
+  const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem(KEY_KEY) ?? '')
   const [keyDraft, setKeyDraft] = useState('')
   const [autoPaste, setAutoPaste] = useState<boolean>(
     () => localStorage.getItem(AUTOPASTE_KEY) !== 'off',
   )
   const [micStatus, setMicStatus] = useState<PermissionState | 'unknown'>('unknown')
-  const [copied, setCopied] = useState(false)
 
-  // Keep the settings draft in sync when entering the tab.
   useEffect(() => {
     if (tab === 'settings') setKeyDraft(apiKey)
   }, [tab, apiKey])
 
-  // Track microphone permission for the Setup health panel.
   useEffect(() => {
     let status: PermissionStatus | null = null
     const update = () => status && setMicStatus(status.state)
@@ -82,17 +96,6 @@ export default function App() {
   }, [])
 
   const latest = entries[0] ?? null
-
-  const copyLatest = useCallback(async () => {
-    if (!latest) return
-    try {
-      await navigator.clipboard.writeText(latest.text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      /* clipboard unavailable */
-    }
-  }, [latest])
 
   const deleteEntry = useCallback((id: string) => {
     setEntries((prev) => {
@@ -111,62 +114,76 @@ export default function App() {
   return (
     <div style={shell}>
       <div style={glow} />
-      <div style={content}>
-        {/* Top bar */}
-        <header style={topBar}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-            <Logo />
-            <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em' }}>
-              Voi
-            </span>
-          </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={segmented}>
-              <button
-                style={tab === 'overview' ? segActive : segItem}
-                onClick={() => setTab('overview')}
-              >
-                Overview
-              </button>
-              <button
-                style={tab === 'settings' ? segActive : segItem}
-                onClick={() => setTab('settings')}
-              >
-                Settings
-              </button>
-            </div>
-            <span style={readyPill}>
-              <span style={readyDot} />
-              Ready
-            </span>
-          </div>
-        </header>
+      {/* Toolbar (draggable, clears traffic lights) */}
+      <header style={{ ...toolbar, ...drag }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <Logo />
+          <span style={brandText}>Voi</span>
+        </div>
 
-        {tab === 'overview' ? (
-          <Overview
-            entries={entries}
-            latest={latest}
-            copied={copied}
-            onCopy={copyLatest}
-            onDelete={deleteEntry}
-          />
-        ) : (
-          <Settings
-            micStatus={micStatus}
-            hasKey={Boolean(apiKey)}
-            keyDraft={keyDraft}
-            setKeyDraft={setKeyDraft}
-            onSaveKey={saveKey}
-            autoPaste={autoPaste}
-            setAutoPaste={(v) => {
-              setAutoPaste(v)
-              localStorage.setItem(AUTOPASTE_KEY, v ? 'on' : 'off')
-            }}
-          />
-        )}
+        <div style={{ ...noDrag, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Segmented tab={tab} onChange={setTab} />
+          <StatusPill />
+        </div>
+      </header>
+
+      <div style={scroll}>
+        <div style={page}>
+          {tab === 'overview' ? (
+            <Overview entries={entries} latest={latest} onDelete={deleteEntry} />
+          ) : (
+            <Settings
+              micStatus={micStatus}
+              hasKey={Boolean(apiKey)}
+              keyDraft={keyDraft}
+              setKeyDraft={setKeyDraft}
+              onSaveKey={saveKey}
+              autoPaste={autoPaste}
+              setAutoPaste={(v) => {
+                setAutoPaste(v)
+                localStorage.setItem(AUTOPASTE_KEY, v ? 'on' : 'off')
+              }}
+            />
+          )}
+        </div>
       </div>
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Toolbar pieces
+// ---------------------------------------------------------------------------
+
+function Segmented({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
+  return (
+    <div style={segmented}>
+      <span
+        style={{
+          ...segThumb,
+          transform: tab === 'overview' ? 'translateX(0)' : 'translateX(100%)',
+        }}
+      />
+      {(['overview', 'settings'] as Tab[]).map((t) => (
+        <button
+          key={t}
+          onClick={() => onChange(t)}
+          style={{ ...segItem, color: tab === t ? C.label : C.secondary }}
+        >
+          {t === 'overview' ? 'Overview' : 'Settings'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function StatusPill() {
+  return (
+    <span style={statusPill}>
+      <span style={statusDot} />
+      Ready
+    </span>
   )
 }
 
@@ -177,62 +194,95 @@ export default function App() {
 function Overview({
   entries,
   latest,
-  copied,
-  onCopy,
   onDelete,
 }: {
   entries: Entry[]
   latest: Entry | null
-  copied: boolean
-  onCopy: () => void
   onDelete: (id: string) => void
 }) {
+  const [copied, setCopied] = useState(false)
+  const copyLatest = async () => {
+    if (!latest) return
+    try {
+      await navigator.clipboard.writeText(latest.text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1400)
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+
+  const rest = entries.slice(1)
+
   return (
-    <main style={overview}>
+    <main style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
       <div>
         <h1 style={headline}>Voice where you work</h1>
-        <p style={subhead}>Hold fn/Globe, speak, release to paste.</p>
+        <p style={subhead}>
+          Hold <Kbd>fn</Kbd> <span style={{ color: C.tertiary }}>/</span>{' '}
+          <Kbd>Globe</Kbd>, speak, release to paste.
+        </p>
       </div>
 
-      <section style={latestBlock}>
-        <span style={sectionLabel}>Latest note</span>
-        <p style={latestText}>
-          {latest ? latest.text : 'Your most recent dictation will appear here.'}
-        </p>
-        <div style={latestFoot}>
-          <span style={{ fontSize: 14, color: '#6b7186' }}>
-            {latest
-              ? formatDate(latest.createdAt)
-              : 'Hold fn/Globe and start speaking.'}
-          </span>
-          <button style={copyButton} onClick={onCopy} disabled={!latest}>
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <span style={eyebrow}>Latest note</span>
+        {latest ? (
+          <>
+            <p style={latestText}>{latest.text}</p>
+            <div style={latestFoot}>
+              <span style={{ fontSize: 13, color: C.tertiary }}>{smartDate(latest.createdAt)}</span>
+              <button
+                style={copied ? copyButtonDone : copyButton}
+                onClick={copyLatest}
+                onMouseEnter={(e) => !copied && (e.currentTarget.style.background = '#ffc05c')}
+                onMouseLeave={(e) => !copied && (e.currentTarget.style.background = C.accent)}
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <div style={emptyHero}>
+            <p style={{ margin: 0, fontSize: 20, color: C.secondary }}>
+              Nothing dictated yet.
+            </p>
+            <p style={{ margin: 0, fontSize: 14, color: C.tertiary }}>
+              Hold <Kbd>fn</Kbd> and start speaking — your words land here.
+            </p>
+          </div>
+        )}
       </section>
 
-      <section style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <span style={sectionLabel}>Recorded notes</span>
-        <div style={notesList}>
-          {entries.length === 0 ? (
-            <p style={{ color: '#5a6078', fontSize: 15, margin: '10px 0' }}>
-              No notes yet.
-            </p>
-          ) : (
-            entries.map((entry) => (
-              <NoteRow key={entry.id} entry={entry} onDelete={() => onDelete(entry.id)} />
-            ))
-          )}
-        </div>
-      </section>
+      {rest.length > 0 && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span style={eyebrow}>Earlier</span>
+          <div>
+            {rest.map((entry, i) => (
+              <NoteRow
+                key={entry.id}
+                entry={entry}
+                first={i === 0}
+                onDelete={() => onDelete(entry.id)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   )
 }
 
-function NoteRow({ entry, onDelete }: { entry: Entry; onDelete: () => void }) {
+function NoteRow({
+  entry,
+  first,
+  onDelete,
+}: {
+  entry: Entry
+  first: boolean
+  onDelete: () => void
+}) {
   const [hover, setHover] = useState(false)
   const [copied, setCopied] = useState(false)
-
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(entry.text)
@@ -242,22 +292,27 @@ function NoteRow({ entry, onDelete }: { entry: Entry; onDelete: () => void }) {
       /* clipboard unavailable */
     }
   }
-
   return (
     <div
-      style={noteRow}
+      style={{
+        ...noteRow,
+        borderTop: first ? 'none' : `1px solid ${C.hairline}`,
+        background: hover ? C.surface : 'transparent',
+      }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
       <div style={{ minWidth: 0 }}>
-        <div style={noteDate}>{formatDate(entry.createdAt)}</div>
+        <div style={{ fontSize: 12, color: C.tertiary, marginBottom: 5 }}>
+          {smartDate(entry.createdAt)}
+        </div>
         <div style={noteText}>{entry.text}</div>
       </div>
-      <div style={{ display: 'flex', gap: 4, opacity: hover ? 1 : 0, transition: 'opacity 0.12s' }}>
+      <div style={{ display: 'flex', gap: 2, opacity: hover ? 1 : 0, transition: 'opacity .12s' }}>
         <button style={rowAction} onClick={copy}>
           {copied ? 'Copied' : 'Copy'}
         </button>
-        <button style={{ ...rowAction, color: '#e06c75' }} onClick={onDelete}>
+        <button style={{ ...rowAction, color: C.red }} onClick={onDelete}>
           Delete
         </button>
       </div>
@@ -266,7 +321,7 @@ function NoteRow({ entry, onDelete }: { entry: Entry; onDelete: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Settings — Setup health + Cartesia API key
+// Settings — macOS System-Settings-style grouped inset lists
 // ---------------------------------------------------------------------------
 
 function Settings({
@@ -287,55 +342,40 @@ function Settings({
   setAutoPaste: (v: boolean) => void
 }) {
   const [saved, setSaved] = useState(false)
+  const mic =
+    micStatus === 'granted'
+      ? { label: 'Allowed', tone: C.green }
+      : micStatus === 'denied'
+        ? { label: 'Blocked', tone: C.red }
+        : { label: 'Not granted', tone: C.secondary }
+
   return (
-    <main style={settings}>
-      <section style={settingsBlock}>
-        <span style={sectionLabel}>Setup health</span>
-        <div style={pillStack}>
-          <HealthPill
-            tone={micStatus === 'granted' ? 'ok' : micStatus === 'denied' ? 'bad' : 'warn'}
-            label={
-              micStatus === 'granted'
-                ? 'Mic: allowed'
-                : micStatus === 'denied'
-                  ? 'Mic: blocked'
-                  : 'Mic: not yet granted'
-            }
-          />
-          <HealthPill
-            tone={autoPaste ? 'ok' : 'warn'}
-            label={autoPaste ? 'Auto-Paste: on' : 'Auto-Paste: off'}
-          />
-          <HealthPill tone={hasKey ? 'ok' : 'bad'} label={hasKey ? 'API key: saved' : 'API key: missing'} />
-        </div>
-      </section>
+    <main style={{ display: 'flex', flexDirection: 'column', gap: 28, maxWidth: 560 }}>
+      <Group title="Setup health">
+        <Row label="Microphone">
+          <StatusValue label={mic.label} tone={mic.tone} />
+        </Row>
+        <Row label="Auto-Paste">
+          <StatusValue label={autoPaste ? 'On' : 'Off'} tone={autoPaste ? C.green : C.secondary} />
+        </Row>
+        <Row label="API key">
+          <StatusValue label={hasKey ? 'Saved' : 'Missing'} tone={hasKey ? C.green : C.red} />
+        </Row>
+      </Group>
 
-      <section style={settingsBlock}>
-        <span style={sectionLabel}>Preferences</span>
-        <label style={toggleRow}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ fontSize: 15 }}>Auto-Paste after dictation</span>
-            <span style={{ fontSize: 13, color: '#6b7186' }}>
-              Paste the transcript as soon as you release the key.
-            </span>
-          </div>
-          <input
-            type="checkbox"
-            checked={autoPaste}
-            onChange={(e) => setAutoPaste(e.target.checked)}
-            style={{ width: 18, height: 18 }}
-          />
-        </label>
-      </section>
+      <Group title="Dictation">
+        <Row label="Auto-Paste after dictation" sub="Paste the transcript the moment you release the key.">
+          <Switch checked={autoPaste} onChange={setAutoPaste} />
+        </Row>
+      </Group>
 
-      <section style={settingsBlock}>
-        <span style={sectionLabel}>Cartesia API key</span>
-        <div style={{ display: 'flex', gap: 10, maxWidth: 460 }}>
+      <Group title="Cartesia API key" footer="Stored only on this device.">
+        <div style={{ display: 'flex', gap: 10, padding: '14px 16px' }}>
           <input
             type="password"
             value={keyDraft}
             onChange={(e) => setKeyDraft(e.target.value)}
-            placeholder="sk_car_..."
+            placeholder="sk_car_…"
             style={textInput}
           />
           <button
@@ -343,48 +383,112 @@ function Settings({
             onClick={() => {
               onSaveKey()
               setSaved(true)
-              setTimeout(() => setSaved(false), 1500)
+              setTimeout(() => setSaved(false), 1400)
             }}
           >
-            {saved ? 'Saved' : 'Save key'}
+            {saved ? 'Saved' : 'Save'}
           </button>
         </div>
-        <span style={{ fontSize: 13, color: '#5a6078' }}>Stored only on this device.</span>
-      </section>
+      </Group>
     </main>
   )
 }
 
-function HealthPill({ tone, label }: { tone: 'ok' | 'warn' | 'bad'; label: string }) {
-  const color = tone === 'ok' ? '#4ade80' : tone === 'warn' ? '#f6b93b' : '#e06c75'
+function Group({
+  title,
+  footer,
+  children,
+}: {
+  title: string
+  footer?: string
+  children: ReactNode
+}) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 9,
-        padding: '10px 16px',
-        borderRadius: 999,
-        border: `1px solid ${color}33`,
-        background: `${color}12`,
-        fontSize: 14,
-        color,
-      }}
-    >
-      <span style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
-      {label}
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <span style={eyebrow}>{title}</span>
+      <div style={groupCard} data-voi-group>{children}</div>
+      {footer && <span style={{ fontSize: 12, color: C.tertiary, paddingLeft: 4 }}>{footer}</span>}
+    </section>
+  )
+}
+
+function Row({
+  label,
+  sub,
+  children,
+}: {
+  label: string
+  sub?: string
+  children: ReactNode
+}) {
+  return (
+    <div style={settingsRow}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+        <span style={{ fontSize: 14, color: C.label }}>{label}</span>
+        {sub && <span style={{ fontSize: 12, color: C.tertiary }}>{sub}</span>}
+      </div>
+      {children}
     </div>
   )
 }
 
+function StatusValue({ label, tone }: { label: string; tone: string }) {
+  return (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: tone }}>
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: tone }} />
+      {label}
+    </span>
+  )
+}
+
+function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      style={{
+        position: 'relative',
+        width: 38,
+        height: 23,
+        borderRadius: 999,
+        border: 'none',
+        padding: 0,
+        background: checked ? C.green : 'rgba(255,255,255,0.16)',
+        transition: 'background .18s ease',
+        flexShrink: 0,
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: 2,
+          left: 2,
+          width: 19,
+          height: 19,
+          borderRadius: '50%',
+          background: '#fff',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+          transform: checked ? 'translateX(15px)' : 'translateX(0)',
+          transition: 'transform .18s ease',
+        }}
+      />
+    </button>
+  )
+}
+
+function Kbd({ children }: { children: ReactNode }) {
+  return <span style={kbd}>{children}</span>
+}
+
 function Logo() {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <rect x="2" y="9" width="2.5" height="6" rx="1.25" fill="var(--amber)" />
-      <rect x="6.5" y="5" width="2.5" height="14" rx="1.25" fill="var(--amber)" />
-      <rect x="11" y="2" width="2.5" height="20" rx="1.25" fill="var(--amber)" />
-      <rect x="15.5" y="5" width="2.5" height="14" rx="1.25" fill="var(--amber)" />
-      <rect x="20" y="9" width="2.5" height="6" rx="1.25" fill="var(--amber)" />
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <rect x="2" y="9" width="2.5" height="6" rx="1.25" fill={C.accent} />
+      <rect x="6.5" y="5" width="2.5" height="14" rx="1.25" fill={C.accent} />
+      <rect x="11" y="2" width="2.5" height="20" rx="1.25" fill={C.accent} />
+      <rect x="15.5" y="5" width="2.5" height="14" rx="1.25" fill={C.accent} />
+      <rect x="20" y="9" width="2.5" height="6" rx="1.25" fill={C.accent} />
     </svg>
   )
 }
@@ -397,122 +501,141 @@ const shell: CSSProperties = {
   position: 'relative',
   height: '100%',
   width: '100%',
-  background: '#08090f',
-  overflowY: 'auto',
+  display: 'flex',
+  flexDirection: 'column',
+  background: 'linear-gradient(180deg, #232228 0%, #1a1a1f 220px, #161619 100%)',
+  color: C.label,
+  overflow: 'hidden',
 }
 
 const glow: CSSProperties = {
   position: 'absolute',
-  top: -160,
+  top: -200,
   left: '50%',
   transform: 'translateX(-50%)',
-  width: 900,
-  height: 460,
-  background: 'radial-gradient(ellipse at center, rgba(246,185,59,0.16), transparent 68%)',
+  width: 760,
+  height: 420,
+  background: 'radial-gradient(ellipse at center, rgba(255,179,64,0.14), transparent 70%)',
   pointerEvents: 'none',
 }
 
-const content: CSSProperties = {
+const toolbar: CSSProperties = {
   position: 'relative',
-  maxWidth: 1040,
-  margin: '0 auto',
-  padding: '24px 48px 64px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 16,
-}
-
-const topBar: CSSProperties = {
+  zIndex: 2,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  paddingBottom: 36,
+  height: 52,
+  padding: '0 18px 0 88px', // clear macOS traffic lights
+  borderBottom: `1px solid ${C.hairline}`,
+  flexShrink: 0,
+}
+
+const brandText: CSSProperties = {
+  fontSize: 15,
+  fontWeight: 600,
+  letterSpacing: '-0.01em',
 }
 
 const segmented: CSSProperties = {
+  position: 'relative',
   display: 'flex',
-  gap: 4,
-  padding: 4,
-  borderRadius: 12,
-  background: '#15161e',
-  border: '1px solid #1d1f2b',
+  padding: 2,
+  borderRadius: 9,
+  background: C.fill,
+  border: `1px solid ${C.hairline}`,
+}
+
+const segThumb: CSSProperties = {
+  position: 'absolute',
+  top: 2,
+  left: 2,
+  width: 'calc(50% - 2px)',
+  height: 'calc(100% - 4px)',
+  borderRadius: 7,
+  background: C.fillStrong,
+  boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
+  transition: 'transform .2s cubic-bezier(0.32,0.72,0,1)',
 }
 
 const segItem: CSSProperties = {
+  position: 'relative',
+  zIndex: 1,
   background: 'transparent',
-  color: '#9aa0b4',
   border: 'none',
-  borderRadius: 9,
-  padding: '8px 20px',
-  fontSize: 15,
+  padding: '5px 16px',
+  fontSize: 13,
   fontWeight: 600,
+  transition: 'color .15s',
 }
 
-const segActive: CSSProperties = {
-  ...segItem,
-  background: 'var(--amber)',
-  color: '#1a1300',
-}
-
-const readyPill: CSSProperties = {
+const statusPill: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 8,
-  padding: '9px 16px',
+  gap: 7,
+  padding: '6px 13px',
   borderRadius: 999,
-  background: '#15161e',
-  border: '1px solid #1d1f2b',
-  fontSize: 14,
-  color: '#c0c4d0',
+  background: C.fill,
+  border: `1px solid ${C.hairline}`,
+  fontSize: 13,
+  color: C.secondary,
 }
 
-const readyDot: CSSProperties = {
-  width: 8,
-  height: 8,
+const statusDot: CSSProperties = {
+  width: 7,
+  height: 7,
   borderRadius: '50%',
-  background: '#4ade80',
+  background: C.green,
+  boxShadow: `0 0 0 3px ${C.green}22`,
 }
 
-const overview: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 44,
+const scroll: CSSProperties = {
+  position: 'relative',
+  zIndex: 1,
+  flex: 1,
+  overflowY: 'auto',
+}
+
+const page: CSSProperties = {
+  maxWidth: 720,
+  margin: '0 auto',
+  padding: '44px 40px 72px',
 }
 
 const headline: CSSProperties = {
   margin: 0,
-  fontSize: 52,
+  fontSize: 46,
   fontWeight: 700,
-  letterSpacing: '-0.03em',
-  lineHeight: 1.04,
+  letterSpacing: '-0.035em',
+  lineHeight: 1.05,
 }
 
 const subhead: CSSProperties = {
-  margin: '14px 0 0',
-  fontSize: 19,
-  color: '#9aa0b4',
-}
-
-const sectionLabel: CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  letterSpacing: '0.02em',
-  color: '#6b7186',
-}
-
-const latestBlock: CSSProperties = {
+  margin: '16px 0 0',
+  fontSize: 17,
+  color: C.secondary,
   display: 'flex',
-  flexDirection: 'column',
-  gap: 16,
+  alignItems: 'center',
+  gap: 6,
+  flexWrap: 'wrap',
+}
+
+const eyebrow: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 600,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  color: C.tertiary,
 }
 
 const latestText: CSSProperties = {
   margin: 0,
-  fontSize: 27,
-  lineHeight: 1.4,
+  fontSize: 26,
+  lineHeight: 1.42,
   fontWeight: 500,
-  color: '#f1f1f5',
-  maxWidth: 820,
+  letterSpacing: '-0.01em',
+  color: C.label,
+  maxWidth: 640,
 }
 
 const latestFoot: CSSProperties = {
@@ -520,23 +643,30 @@ const latestFoot: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: 16,
-  borderTop: '1px solid #15161e',
-  paddingTop: 16,
 }
 
 const copyButton: CSSProperties = {
-  background: '#1b1c25',
-  color: '#e8e8ed',
-  border: '1px solid #262838',
-  borderRadius: 12,
-  padding: '11px 26px',
-  fontSize: 15,
+  background: C.accent,
+  color: C.accentText,
+  border: 'none',
+  borderRadius: 10,
+  padding: '10px 24px',
+  fontSize: 14,
   fontWeight: 600,
+  transition: 'background .15s',
 }
 
-const notesList: CSSProperties = {
+const copyButtonDone: CSSProperties = {
+  ...copyButton,
+  background: C.green,
+  color: '#06230f',
+}
+
+const emptyHero: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
+  gap: 8,
+  padding: '28px 0',
 }
 
 const noteRow: CSSProperties = {
@@ -544,80 +674,85 @@ const noteRow: CSSProperties = {
   alignItems: 'flex-start',
   justifyContent: 'space-between',
   gap: 16,
-  padding: '16px 0',
-  borderBottom: '1px solid #111219',
-}
-
-const noteDate: CSSProperties = {
-  fontSize: 15,
-  color: '#e8e8ed',
-  marginBottom: 4,
+  padding: '14px 12px',
+  margin: '0 -12px',
+  borderRadius: 10,
+  transition: 'background .12s',
 }
 
 const noteText: CSSProperties = {
-  fontSize: 15,
+  fontSize: 14.5,
   lineHeight: 1.5,
-  color: '#9aa0b4',
+  color: C.secondary,
 }
 
 const rowAction: CSSProperties = {
   background: 'transparent',
   border: 'none',
-  color: '#9aa0b4',
-  fontSize: 13,
+  color: C.secondary,
+  fontSize: 12.5,
   fontWeight: 500,
-  padding: '4px 6px',
+  padding: '4px 8px',
+  borderRadius: 6,
   whiteSpace: 'nowrap',
 }
 
-const settings: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 36,
-  maxWidth: 640,
+const groupCard: CSSProperties = {
+  borderRadius: 12,
+  background: C.surface,
+  border: `1px solid ${C.hairline}`,
+  overflow: 'hidden',
 }
 
-const settingsBlock: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 14,
-}
-
-const pillStack: CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: 10,
-}
-
-const toggleRow: CSSProperties = {
+const settingsRow: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  gap: 20,
+  gap: 16,
   padding: '14px 16px',
-  borderRadius: 12,
-  border: '1px solid #15161e',
-  background: '#0d0e16',
+  borderTop: `1px solid ${C.hairline}`,
 }
 
 const textInput: CSSProperties = {
   flex: 1,
-  background: '#0a0b14',
-  border: '1px solid #24263a',
-  borderRadius: 12,
-  padding: '12px 14px',
-  color: '#e8e8ed',
-  fontSize: 15,
+  background: 'rgba(0,0,0,0.25)',
+  border: `1px solid ${C.hairline}`,
+  borderRadius: 9,
+  padding: '10px 13px',
+  color: C.label,
+  fontSize: 14,
   outline: 'none',
 }
 
 const amberButton: CSSProperties = {
-  background: 'var(--amber)',
-  color: '#1a1300',
+  background: C.accent,
+  color: C.accentText,
   border: 'none',
-  borderRadius: 12,
-  padding: '12px 22px',
-  fontSize: 15,
+  borderRadius: 9,
+  padding: '10px 20px',
+  fontSize: 14,
   fontWeight: 600,
   whiteSpace: 'nowrap',
+}
+
+const kbd: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '2px 8px',
+  borderRadius: 6,
+  background: C.fill,
+  border: `1px solid ${C.hairline}`,
+  fontSize: 13,
+  fontWeight: 600,
+  color: C.label,
+  boxShadow: '0 1px 0 rgba(0,0,0,0.3)',
+}
+
+// The first row in a group shouldn't show a top divider.
+const firstRowFix = 'voi-settings-fix'
+if (typeof document !== 'undefined' && !document.getElementById(firstRowFix)) {
+  const s = document.createElement('style')
+  s.id = firstRowFix
+  s.textContent = `[data-voi-group] > *:first-child { border-top: none !important; }`
+  document.head.appendChild(s)
 }
