@@ -651,7 +651,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     private func showRecordingOverlay(status: String) {
         if recordingOverlayWindow == nil {
-            let size = NSSize(width: 148, height: 50)
+            let size = NSSize(width: 140, height: 46)
             let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
             let origin = NSPoint(
                 x: screenFrame.midX - size.width / 2,
@@ -677,7 +677,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
             let label = uiLabel(status, size: 14, weight: .regular, color: primaryTextColor)
             label.alignment = .center
-            label.frame = NSRect(x: 43, y: 16, width: 92, height: 18)
+            label.frame = NSRect(x: 40, y: 14, width: 88, height: 18)
             content.addSubview(label)
             recordingOverlayStatusLabel = label
 
@@ -1519,7 +1519,7 @@ final class WaveMarkView: NSView {
 
 final class RecordingOverlayView: NSView {
     private var animationTimer: Timer?
-    private let discColor = NSColor(calibratedWhite: 0.18, alpha: 0.38)
+    private let discColor = NSColor(calibratedWhite: 0.24, alpha: 0.44)
     private let glowColor = NSColor(calibratedWhite: 1.0, alpha: 1)
 
     private struct DotConfig {
@@ -1567,7 +1567,7 @@ final class RecordingOverlayView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let rounded = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 14, yRadius: 14)
+        let rounded = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 13, yRadius: 13)
         NSColor(calibratedWhite: 0.025, alpha: 0.86).setFill()
         rounded.fill()
 
@@ -1575,7 +1575,7 @@ final class RecordingOverlayView: NSView {
         rounded.lineWidth = 1
         rounded.stroke()
 
-        let markRect = NSRect(x: 12, y: 11, width: 28, height: 28)
+        let markRect = NSRect(x: 11, y: 9, width: 28, height: 28)
         discColor.setFill()
         NSBezierPath(ovalIn: markRect).fill()
         drawOrbitDots(in: markRect)
