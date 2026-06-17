@@ -1417,6 +1417,26 @@ final class SidebarView: NSView {
 /// The Voi signature — five amber bars echoing the brand waveform mark.
 final class WaveMarkView: NSView {
     private let color: NSColor
+    private var animationTimer: Timer?
+
+    private struct DotConfig {
+        let radius: CGFloat
+        let size: CGFloat
+        let speed: CGFloat
+        let phase: CGFloat
+        let opacity: CGFloat
+    }
+
+    private let dotConfigs: [DotConfig] = [
+        DotConfig(radius: 3.2, size: 1.4, speed: 1.55, phase: 0.10, opacity: 0.84),
+        DotConfig(radius: 4.4, size: 1.6, speed: 1.10, phase: 0.55, opacity: 0.72),
+        DotConfig(radius: 5.3, size: 1.8, speed: 1.95, phase: 1.05, opacity: 0.90),
+        DotConfig(radius: 6.2, size: 1.7, speed: 0.92, phase: 1.60, opacity: 0.64),
+        DotConfig(radius: 4.8, size: 1.5, speed: 1.34, phase: 2.10, opacity: 0.78),
+        DotConfig(radius: 5.8, size: 1.3, speed: 1.78, phase: 2.70, opacity: 0.58),
+        DotConfig(radius: 3.8, size: 1.2, speed: 2.20, phase: 3.20, opacity: 0.66),
+        DotConfig(radius: 6.6, size: 1.5, speed: 1.26, phase: 3.80, opacity: 0.74),
+    ]
 
     init(frame: NSRect, color: NSColor) {
         self.color = color
@@ -1427,21 +1447,49 @@ final class WaveMarkView: NSView {
 
     override var isFlipped: Bool { false }
 
-    override func draw(_ dirtyRect: NSRect) {
-        color.setFill()
-        let heights: [CGFloat] = [0.32, 0.62, 1.0, 0.62, 0.32]
-        let barWidth: CGFloat = 2.6
-        let gap = (bounds.width - barWidth * CGFloat(heights.count)) / CGFloat(heights.count - 1)
-        for (index, factor) in heights.enumerated() {
-            let height = bounds.height * factor
-            let rect = NSRect(
-                x: CGFloat(index) * (barWidth + gap),
-                y: (bounds.height - height) / 2,
-                width: barWidth,
-                height: height
-            )
-            NSBezierPath(roundedRect: rect, xRadius: barWidth / 2, yRadius: barWidth / 2).fill()
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            animationTimer?.invalidate()
+            animationTimer = nil
+        } else if animationTimer == nil {
+            animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.needsDisplay = true
+                }
+            }
         }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let t = CGFloat(Date().timeIntervalSinceReferenceDate)
+        let center = NSPoint(x: bounds.midX, y: bounds.midY)
+        let baseRadius = min(bounds.width, bounds.height) * 0.33
+
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = color.withAlphaComponent(0.18)
+        shadow.shadowOffset = .zero
+        shadow.shadowBlurRadius = 5
+        shadow.set()
+
+        color.withAlphaComponent(0.06).setFill()
+        NSBezierPath(ovalIn: bounds.insetBy(dx: 1.5, dy: 0.5)).fill()
+
+        for cfg in dotConfigs {
+            let angle = t * cfg.speed + cfg.phase
+            let pulse = (sin(t * cfg.speed * 2.2 + cfg.phase) + 1) / 2
+            let orbitRadius = baseRadius * (cfg.radius / 6.6)
+            let dotSize = cfg.size * (0.8 + 0.32 * pulse)
+            let point = NSPoint(
+                x: center.x + orbitRadius * cos(angle) - dotSize / 2,
+                y: center.y + orbitRadius * sin(angle) - dotSize / 2
+            )
+            let dotRect = NSRect(origin: point, size: NSSize(width: dotSize, height: dotSize))
+            color.withAlphaComponent(cfg.opacity * (0.55 + 0.35 * pulse)).setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
+        }
+        NSGraphicsContext.restoreGraphicsState()
     }
 }
 
