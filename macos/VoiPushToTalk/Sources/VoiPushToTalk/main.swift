@@ -932,7 +932,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         }
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 820, height: 600),
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 760),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -944,55 +944,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         window.isReleasedWhenClosed = false
         window.level = .normal
 
-        let content = DashboardBackgroundView(frame: window.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 820, height: 600))
+        let content = DashboardBackgroundView(frame: window.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 760, height: 760))
         content.autoresizingMask = [.width, .height]
         window.contentView = content
 
-        let sidebar = SidebarView(frame: NSRect(x: 0, y: 0, width: 272, height: 600), fill: panelColor, line: borderColor)
-        
-        sidebar.autoresizingMask = [.height]
-        content.addSubview(sidebar)
+        let columnX: CGFloat = 118
+        let columnW: CGFloat = 524
 
-        let logo = WaveMarkView(frame: NSRect(x: 20, y: 556, width: 30, height: 26), color: accentColor)
+        let logo = WaveMarkView(frame: NSRect(x: columnX, y: 684, width: 22, height: 20), color: accentColor)
         content.addSubview(logo)
 
-        let brand = uiLabel("Voi", size: 20, weight: .bold)
-        brand.frame = NSRect(x: 56, y: 553, width: 150, height: 30)
+        let brand = uiLabel("Voi", size: 17, weight: .semibold)
+        brand.frame = NSRect(x: columnX + 34, y: 679, width: 120, height: 28)
         content.addSubview(brand)
 
         let status = uiLabel("Ready", size: 12.5, weight: .medium, color: primaryTextColor)
-        status.frame = NSRect(x: 20, y: 510, width: 232, height: 32)
+        status.frame = NSRect(x: columnX + 372, y: 676, width: 152, height: 28)
         status.alignment = .center
         status.wantsLayer = true
-        status.layer?.cornerRadius = 8
+        status.layer?.cornerRadius = 14
         status.layer?.borderWidth = 1
         status.layer?.borderColor = borderColor.cgColor
-        status.layer?.backgroundColor = NSColor(calibratedWhite: 0.03, alpha: 0.5).cgColor
+        status.layer?.backgroundColor = NSColor(calibratedWhite: 0.03, alpha: 0.32).cgColor
         content.addSubview(status)
         statusLabel = status
 
-        let permission = uiLabel("Setup health", size: 12, weight: .semibold, color: secondaryTextColor)
-        permission.frame = NSRect(x: 20, y: 476, width: 200, height: 18)
+        let title = uiLabel("Voice where you work", size: 30, weight: .bold)
+        title.frame = NSRect(x: columnX, y: 606, width: columnW, height: 36)
+        content.addSubview(title)
+        titleLabel = title
+
+        let subtitle = uiLabel("Hold fn/Globe, speak, release to paste.", size: 14, weight: .regular, color: secondaryTextColor)
+        subtitle.frame = NSRect(x: columnX, y: 578, width: columnW, height: 22)
+        content.addSubview(subtitle)
+        subtitleLabel = subtitle
+
+        let permission = uiLabel("Setup health", size: 12, weight: .medium, color: mutedTextColor)
+        permission.frame = NSRect(x: columnX, y: 538, width: 120, height: 18)
         content.addSubview(permission)
         permissionLabel = permission
 
-        let mic = makeChip(frame: NSRect(x: 20, y: 440, width: 232, height: 28))
+        let mic = makeChip(frame: NSRect(x: columnX, y: 498, width: 164, height: 30))
         content.addSubview(mic)
         micChip = mic
 
-        let accessibility = makeChip(frame: NSRect(x: 20, y: 406, width: 232, height: 28))
+        let accessibility = makeChip(frame: NSRect(x: columnX + 180, y: 498, width: 164, height: 30))
         content.addSubview(accessibility)
         accessibilityChip = accessibility
 
-        let inputEvents = makeChip(frame: NSRect(x: 20, y: 372, width: 232, height: 28))
+        let inputEvents = makeChip(frame: NSRect(x: columnX + 360, y: 498, width: 164, height: 30))
         content.addSubview(inputEvents)
         inputChip = inputEvents
 
-        let label = uiLabel("Cartesia API key", size: 12, weight: .semibold, color: secondaryTextColor)
-        label.frame = NSRect(x: 20, y: 334, width: 200, height: 18)
+        let label = uiLabel("Cartesia API key", size: 12, weight: .medium, color: mutedTextColor)
+        label.frame = NSRect(x: columnX, y: 448, width: 160, height: 18)
         content.addSubview(label)
 
-        let input = NSTextField(frame: NSRect(x: 20, y: 302, width: 232, height: 30))
+        let input = NSTextField(frame: NSRect(x: columnX, y: 414, width: 360, height: 34))
         let hasSavedKey = UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty == false
         input.placeholderString = hasSavedKey ? "Key saved. Paste a new key to replace." : "Paste your Cartesia API key"
         input.stringValue = ""
@@ -1002,7 +1010,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
         let saveButton = makeButton(
             title: "Save key",
-            frame: NSRect(x: 20, y: 260, width: 232, height: 34),
+            frame: NSRect(x: columnX + 376, y: 414, width: 148, height: 34),
             action: #selector(saveCartesiaKeyFromWindow),
             accent: !hasSavedKey
         )
@@ -1011,7 +1019,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
         let autoPasteButton = makeButton(
             title: AXIsProcessTrusted() ? "Auto-Paste on" : "Enable Auto-Paste",
-            frame: NSRect(x: 20, y: 218, width: 232, height: 30),
+            frame: NSRect(x: columnX, y: 366, width: 168, height: 30),
             action: #selector(enableAutoPaste),
             accent: !AXIsProcessTrusted()
         )
@@ -1019,75 +1027,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
         let hideButton = makeButton(
             title: "Hide",
-            frame: NSRect(x: 20, y: 176, width: 110, height: 30),
+            frame: NSRect(x: columnX + 184, y: 366, width: 92, height: 30),
             action: #selector(hideSetupWindow)
         )
         content.addSubview(hideButton)
 
         let testButton = makeButton(
             title: "Test paste",
-            frame: NSRect(x: 142, y: 176, width: 110, height: 30),
+            frame: NSRect(x: columnX + 288, y: 366, width: 108, height: 30),
             action: #selector(testPaste)
         )
         content.addSubview(testButton)
 
         let manualButton = makeButton(
             title: "Start dictation",
-            frame: NSRect(x: 20, y: 134, width: 232, height: 30),
+            frame: NSRect(x: columnX + 408, y: 366, width: 116, height: 30),
             action: #selector(toggleManualDictation),
             accent: false
         )
         content.addSubview(manualButton)
         manualDictationButton = manualButton
 
-        let diagnosticsButton = makeButton(
-            title: "Show diagnostics",
-            frame: NSRect(x: 20, y: 20, width: 232, height: 30),
-            action: #selector(toggleDiagnostics)
-        )
-        content.addSubview(diagnosticsButton)
-        diagnosticsToggleButton = diagnosticsButton
+        let composerLabel = uiLabel("Latest note", size: 12, weight: .medium, color: mutedTextColor)
+        composerLabel.frame = NSRect(x: columnX, y: 320, width: 120, height: 18)
+        content.addSubview(composerLabel)
 
-        let mainX: CGFloat = 296
-        let mainW: CGFloat = 500
-
-        let title = uiLabel("Voi is ready", size: 25, weight: .bold)
-        title.frame = NSRect(x: mainX, y: 548, width: mainW, height: 34)
-        content.addSubview(title)
-        titleLabel = title
-
-        let subtitle = uiLabel("Hold fn/Globe, speak, release to paste.", size: 13, weight: .regular, color: secondaryTextColor)
-        subtitle.frame = NSRect(x: mainX, y: 520, width: mainW, height: 22)
-        content.addSubview(subtitle)
-        subtitleLabel = subtitle
-
-        let composerScroll = NSScrollView(frame: NSRect(x: mainX, y: 300, width: mainW, height: 200))
+        let composerScroll = NSScrollView(frame: NSRect(x: columnX, y: 206, width: columnW, height: 102))
         let composerView = NSTextView(frame: composerScroll.bounds)
         styleScrollView(composerScroll, textView: composerView)
-        composerView.font = .systemFont(ofSize: 17, weight: .regular)
+        composerView.font = .systemFont(ofSize: 19, weight: .regular)
         composerView.isSelectable = false
-        composerView.textContainerInset = NSSize(width: 18, height: 16)
+        composerView.textContainerInset = NSSize(width: 20, height: 16)
         composerScroll.documentView = composerView
         content.addSubview(composerScroll)
         composerTextView = composerView
 
         let shortcut = uiLabel("Waiting for fn/Globe.", size: 12.5, weight: .regular, color: secondaryTextColor)
-        shortcut.frame = NSRect(x: mainX, y: 266, width: 380, height: 20)
+        shortcut.frame = NSRect(x: columnX, y: 176, width: 330, height: 20)
         content.addSubview(shortcut)
         shortcutLabel = shortcut
 
         let copyButton = makeButton(
             title: "Copy",
-            frame: NSRect(x: mainX + mainW - 92, y: 262, width: 92, height: 30),
+            frame: NSRect(x: columnX + columnW - 96, y: 170, width: 96, height: 30),
             action: #selector(copyLatestNote)
         )
         content.addSubview(copyButton)
 
         let notesLabel = uiLabel("Recorded notes", size: 12, weight: .semibold, color: secondaryTextColor)
-        notesLabel.frame = NSRect(x: mainX, y: 226, width: 220, height: 18)
+        notesLabel.frame = NSRect(x: columnX, y: 142, width: 220, height: 18)
         content.addSubview(notesLabel)
 
-        let scrollView = NSScrollView(frame: NSRect(x: mainX, y: 52, width: mainW, height: 162))
+        let notesRect = NSRect(x: columnX, y: 20, width: columnW, height: 112)
+        let scrollView = NSScrollView(frame: notesRect)
         let textView = NSTextView(frame: scrollView.bounds)
         styleScrollView(scrollView, textView: textView)
         scrollView.documentView = textView
@@ -1096,7 +1088,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         notesTextView = textView
         refreshNotesView()
 
-        let eventScrollView = NSScrollView(frame: NSRect(x: mainX, y: 52, width: mainW, height: 162))
+        let diagnosticsButton = makeButton(
+            title: "Show diagnostics",
+            frame: NSRect(x: columnX + columnW - 150, y: 136, width: 150, height: 28),
+            action: #selector(toggleDiagnostics)
+        )
+        content.addSubview(diagnosticsButton)
+        diagnosticsToggleButton = diagnosticsButton
+
+        let eventScrollView = NSScrollView(frame: notesRect)
         let eventTextView = NSTextView(frame: eventScrollView.bounds)
         styleScrollView(eventScrollView, textView: eventTextView, mono: true)
         eventScrollView.documentView = eventTextView
