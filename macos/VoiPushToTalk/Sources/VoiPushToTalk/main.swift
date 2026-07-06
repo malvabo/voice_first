@@ -12,6 +12,12 @@ private let cartesiaLanguage = "en"
 private let cartesiaKeyDefaultsKey = "voi.cartesiaKey"
 private let recordedNotesDefaultsKey = "voi.recordedNotes"
 
+// Shared semantic color palette — single source of truth for the accent and
+// status colors, previously re-typed as raw literals throughout the file.
+private let voiAccent = NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 1)
+private let voiSuccess = NSColor(calibratedRed: 0.19, green: 0.82, blue: 0.35, alpha: 1)
+private let voiDanger = NSColor(calibratedRed: 0.93, green: 0.42, blue: 0.44, alpha: 1)
+
 private enum PasteResult {
     case pasted
     case copiedNeedsAccessibility
@@ -39,11 +45,11 @@ private enum ChipState {
     private var hue: NSColor {
         switch self {
         case .success:
-            return NSColor(calibratedRed: 0.42, green: 0.82, blue: 0.52, alpha: 1)
+            return voiSuccess
         case .warning:
-            return NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 1)
+            return voiAccent
         case .blocked:
-            return NSColor(calibratedRed: 0.93, green: 0.42, blue: 0.44, alpha: 1)
+            return voiDanger
         case .neutral:
             return NSColor(calibratedWhite: 0.78, alpha: 1)
         }
@@ -72,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private let primaryTextColor = NSColor(calibratedWhite: 0.93, alpha: 1)
     private let secondaryTextColor = NSColor(calibratedWhite: 0.62, alpha: 1)
     private let mutedTextColor = NSColor(calibratedWhite: 0.45, alpha: 1)
-    private let accentColor = NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 1)
+    private let accentColor = voiAccent
     private let accentInkColor = NSColor(calibratedRed: 0.10, green: 0.075, blue: 0.0, alpha: 1)
 
     private var statusItem: NSStatusItem!
@@ -280,7 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         input.cell?.isScrollable = true
         input.focusRingType = .none
         input.wantsLayer = true
-        input.layer?.cornerRadius = 9
+        input.layer?.cornerRadius = 10
         input.layer?.borderWidth = 1
         input.layer?.borderColor = borderColor.cgColor
         input.layer?.backgroundColor = NSColor(calibratedWhite: 0.02, alpha: 0.24).cgColor
@@ -997,7 +1003,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                 string: "● ",
                 attributes: [
                     .font: NSFont.systemFont(ofSize: 10, weight: .bold),
-                    .foregroundColor: NSColor(calibratedRed: 0.19, green: 0.82, blue: 0.35, alpha: 1),
+                    .foregroundColor: voiSuccess,
                     .baselineOffset: 1.0,
                     .paragraphStyle: paragraph,
                 ]
@@ -1386,10 +1392,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         switch mic {
         case .authorized:
             micStatus = "Allowed"
-            micColor = NSColor(calibratedRed: 0.19, green: 0.82, blue: 0.35, alpha: 1)
+            micColor = voiSuccess
         case .denied, .restricted:
             micStatus = "Blocked"
-            micColor = NSColor(calibratedRed: 0.93, green: 0.42, blue: 0.44, alpha: 1)
+            micColor = voiDanger
         case .notDetermined:
             micStatus = "Not granted"
             micColor = secondaryTextColor
@@ -1404,12 +1410,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         updateStatusValue(
             accessibilityChip,
             title: isAccessible ? "On" : "Off",
-            color: isAccessible ? NSColor(calibratedRed: 0.19, green: 0.82, blue: 0.35, alpha: 1) : secondaryTextColor
+            color: isAccessible ? voiSuccess : secondaryTextColor
         )
         updateStatusValue(
             inputChip,
             title: hasKey ? "Saved" : "Missing",
-            color: hasKey ? NSColor(calibratedRed: 0.19, green: 0.82, blue: 0.35, alpha: 1) : NSColor(calibratedRed: 0.93, green: 0.42, blue: 0.44, alpha: 1)
+            color: hasKey ? voiSuccess : voiDanger
         )
         autoPasteSwitch?.state = isAccessible ? .on : .off
         updateSettingsStatus(mic: mic, hasKey: hasKey, isAccessible: isAccessible, eventTapActive: eventTapActive)
@@ -1432,7 +1438,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             detail = "Add a speech API key before dictating."
             buttonTitle = "Add Key"
             buttonTag = 4
-            titleColor = NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 1)
+            titleColor = voiAccent
         } else {
             switch mic {
             case .authorized:
@@ -1441,38 +1447,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                     detail = "Allow Accessibility to paste into other apps."
                     buttonTitle = "Enable"
                     buttonTag = 3
-                    titleColor = NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 1)
+                    titleColor = voiAccent
                 } else if !eventTapActive && !hasRegisteredHotKey {
                     title = "Shortcut unavailable"
                     detail = "Reopen Voi or check input permissions."
                     buttonTitle = nil
                     buttonTag = 0
-                    titleColor = NSColor(calibratedRed: 0.93, green: 0.42, blue: 0.44, alpha: 1)
+                    titleColor = voiDanger
                 } else {
                     title = "Ready across your Mac"
                     detail = "Hold fn/Globe to dictate."
                     buttonTitle = nil
                     buttonTag = 0
-                    titleColor = NSColor(calibratedRed: 0.19, green: 0.82, blue: 0.35, alpha: 1)
+                    titleColor = voiSuccess
                 }
             case .notDetermined:
                 title = "Microphone not allowed"
                 detail = "Allow microphone access to start dictating."
                 buttonTitle = "Allow"
                 buttonTag = 1
-                titleColor = NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 1)
+                titleColor = voiAccent
             case .denied, .restricted:
                 title = "Microphone blocked"
                 detail = "Enable microphone access in System Settings."
                 buttonTitle = "Open"
                 buttonTag = 2
-                titleColor = NSColor(calibratedRed: 0.93, green: 0.42, blue: 0.44, alpha: 1)
+                titleColor = voiDanger
             @unknown default:
                 title = "Microphone unknown"
                 detail = "Check microphone permissions in System Settings."
                 buttonTitle = "Open"
                 buttonTag = 2
-                titleColor = NSColor(calibratedRed: 0.93, green: 0.42, blue: 0.44, alpha: 1)
+                titleColor = voiDanger
             }
         }
 
@@ -1696,8 +1702,8 @@ final class DashboardBackgroundView: NSView {
         let glowCenter = NSPoint(x: bounds.width * 0.62, y: bounds.height * 0.9)
         let glowRadius = bounds.width * 0.45
         let glow = NSGradient(colors: [
-            NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 0.14),
-            NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 0.0),
+            voiAccent.withAlphaComponent(0.14),
+            voiAccent.withAlphaComponent(0.0),
         ])
         glow?.draw(
             fromCenter: glowCenter, radius: 0,
