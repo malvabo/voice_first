@@ -1653,28 +1653,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             return
         }
 
-        let formatter = DateFormatter()
-        formatter.doesRelativeDateFormatting = true
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
+        let dayFormatter = DateFormatter()
+        dayFormatter.doesRelativeDateFormatting = true
+        dayFormatter.dateStyle = .medium
+        dayFormatter.timeStyle = .none
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateStyle = .none
+        timeFormatter.timeStyle = .short
+
+        let calendar = Calendar.current
+        let textParagraph = NSMutableParagraphStyle()
+        textParagraph.lineSpacing = 1
 
         let body = NSMutableAttributedString()
+        var previousDay: Date?
         for (index, note) in notes.enumerated() {
-            if index > 0 {
-                body.append(NSAttributedString(string: "\n"))
-            }
+            // Only repeat the full date when the day changes; otherwise show
+            // just the time so a run of same-day entries reads cleanly.
+            let day = calendar.startOfDay(for: note.createdAt)
+            let stamp = previousDay == day
+                ? timeFormatter.string(from: note.createdAt)
+                : "\(dayFormatter.string(from: note.createdAt))  ·  \(timeFormatter.string(from: note.createdAt))"
+            previousDay = day
+
+            let stampParagraph = NSMutableParagraphStyle()
+            stampParagraph.lineSpacing = 1
+            stampParagraph.paragraphSpacingBefore = index == 0 ? 0 : 18
+            stampParagraph.paragraphSpacing = 3
+
             body.append(NSAttributedString(
-                string: "\(formatter.string(from: note.createdAt))\n",
+                string: "\(stamp)\n",
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+                    .font: NSFont.systemFont(ofSize: 11.5, weight: .medium),
                     .foregroundColor: mutedTextColor,
+                    .paragraphStyle: stampParagraph,
                 ]
             ))
             body.append(NSAttributedString(
                 string: note.text + "\n",
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 14, weight: .regular),
-                    .foregroundColor: secondaryTextColor,
+                    .font: NSFont.systemFont(ofSize: 14.5, weight: .regular),
+                    .foregroundColor: primaryTextColor,
+                    .paragraphStyle: textParagraph,
                 ]
             ))
         }
