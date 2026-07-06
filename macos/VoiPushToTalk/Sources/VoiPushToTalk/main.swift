@@ -97,6 +97,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private var notesScrollView: NSScrollView?
     private var composerTextView: NSTextView?
     private var permissionLabel: NSTextField?
+    private var settingsStatusTitleLabel: NSTextField?
+    private var settingsStatusDetailLabel: NSTextField?
+    private var settingsStatusButton: NSButton?
     private var micChip: NSTextField?
     private var accessibilityChip: NSTextField?
     private var inputChip: NSTextField?
@@ -162,8 +165,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         menu.addItem(NSMenuItem(title: "Option-Space is fallback", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Show Dashboard", action: #selector(showDashboard), keyEquivalent: "d"))
-        menu.addItem(NSMenuItem(title: "Set Cartesia API Key...", action: #selector(setCartesiaKey), keyEquivalent: ","))
-        menu.addItem(NSMenuItem(title: "Use Clipboard as Cartesia Key", action: #selector(useClipboardAsCartesiaKey), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Set Speech API Key...", action: #selector(setCartesiaKey), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: "Use Clipboard as API Key", action: #selector(useClipboardAsCartesiaKey), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Test Paste", action: #selector(testPaste), keyEquivalent: "t"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit Voi", action: #selector(quit), keyEquivalent: "q"))
@@ -218,15 +221,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         button.bezelStyle = .regularSquare
         button.alignment = .center
         button.wantsLayer = true
-        button.layer?.cornerRadius = 8
+        button.layer?.cornerRadius = 10
         button.layer?.borderWidth = 1
-        button.layer?.borderColor = (accent ? NSColor.clear : borderColor).cgColor
-        button.layer?.backgroundColor = (accent ? accentColor.withAlphaComponent(0.92) : NSColor(calibratedWhite: 1, alpha: 0.055)).cgColor
+        button.layer?.borderColor = (accent ? accentColor.withAlphaComponent(0.32) : NSColor(calibratedWhite: 1, alpha: 0.10)).cgColor
+        button.layer?.backgroundColor = (accent ? accentColor.withAlphaComponent(0.90) : NSColor(calibratedWhite: 1, alpha: 0.035)).cgColor
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
         button.attributedTitle = NSAttributedString(
             string: button.title,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: accent ? accentInkColor : primaryTextColor,
+                .font: NSFont.systemFont(ofSize: 13, weight: accent ? .semibold : .medium),
+                .foregroundColor: accent ? accentInkColor : secondaryTextColor,
+                .paragraphStyle: paragraph,
             ]
         )
     }
@@ -266,14 +272,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private func styleTextField(_ input: NSTextField) {
         input.font = .systemFont(ofSize: 14, weight: .regular)
         input.textColor = primaryTextColor
+        setPlaceholder(input.placeholderString ?? "", for: input)
         input.backgroundColor = NSColor(calibratedWhite: 0.02, alpha: 0.24)
         input.isBezeled = false
+        input.cell?.usesSingleLineMode = true
+        input.cell?.wraps = false
+        input.cell?.isScrollable = true
         input.focusRingType = .none
         input.wantsLayer = true
         input.layer?.cornerRadius = 9
         input.layer?.borderWidth = 1
         input.layer?.borderColor = borderColor.cgColor
         input.layer?.backgroundColor = NSColor(calibratedWhite: 0.02, alpha: 0.24).cgColor
+    }
+
+    private func setPlaceholder(_ text: String, for input: NSTextField?) {
+        input?.placeholderString = text
+        input?.placeholderAttributedString = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 14, weight: .regular),
+                .foregroundColor: mutedTextColor,
+            ]
+        )
     }
 
     private func styleScrollView(_ scrollView: NSScrollView, textView: NSTextView, mono: Bool = false) {
@@ -657,10 +678,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         guard recorder == nil else { return true }
         guard UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty == false else {
             writeLog("recording blocked missingCartesiaKey")
-            setStatus("Add Cartesia key")
+            setStatus("Add API key")
             showRecordingOverlay(status: "Add API key")
             hideRecordingOverlay(after: 1.2)
-            shortcutLabel?.stringValue = "Add your Cartesia key before recording."
+            shortcutLabel?.stringValue = "Add your speech API key before recording."
             showSetupWindow()
             return false
         }
@@ -891,7 +912,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     private func transcribeAndPolish(fileURL: URL) async throws -> String {
         guard let key = UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey), !key.isEmpty else {
-            throw VoiError.message("Add Cartesia key")
+            throw VoiError.message("Add API key")
         }
 
         var request = URLRequest(url: cartesiaURL)
@@ -969,6 +990,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     private func setStatus(_ message: String) {
         statusItem.button?.title = message == "Voi ready" ? "Voi" : "Voi: \(message)"
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .right
         if message == "Voi ready" {
             let attributed = NSMutableAttributedString(
                 string: "● ",
@@ -976,6 +999,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                     .font: NSFont.systemFont(ofSize: 10, weight: .bold),
                     .foregroundColor: NSColor(calibratedRed: 0.19, green: 0.82, blue: 0.35, alpha: 1),
                     .baselineOffset: 1.0,
+                    .paragraphStyle: paragraph,
                 ]
             )
             attributed.append(NSAttributedString(
@@ -983,6 +1007,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                 attributes: [
                     .font: NSFont.systemFont(ofSize: 13, weight: .medium),
                     .foregroundColor: secondaryTextColor,
+                    .paragraphStyle: paragraph,
                 ]
             ))
             statusLabel?.attributedStringValue = attributed
@@ -992,6 +1017,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                 attributes: [
                     .font: NSFont.systemFont(ofSize: 12.5, weight: .medium),
                     .foregroundColor: primaryTextColor,
+                    .paragraphStyle: paragraph,
                 ]
             )
         }
@@ -1043,6 +1069,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         }
     }
 
+    private func openMicrophoneSettings() {
+        let urls = [
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+            "x-apple.systempreferences:com.apple.preference.security",
+        ]
+        for value in urls {
+            if let url = URL(string: value), NSWorkspace.shared.open(url) {
+                return
+            }
+        }
+    }
+
     @objc private func useClipboardAsCartesiaKey() {
         guard let clipboardText = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !clipboardText.isEmpty else {
@@ -1051,13 +1089,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         }
 
         UserDefaults.standard.set(clipboardText, forKey: cartesiaKeyDefaultsKey)
-        setStatus("Cartesia key saved")
+        setStatus("API key saved")
     }
 
     private func showSetupWindow(activate: Bool = true) {
         if activate {
             NSApp.activate(ignoringOtherApps: true)
-            NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            NSRunningApplication.current.activate(options: [.activateAllWindows])
         }
 
         if let setupWindow {
@@ -1066,11 +1104,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             }
             updateSetupCopy()
             refreshPermissionStatus(eventTapActive: eventTap != nil)
+            refreshNotesView()
             return
         }
 
+        overviewViews.removeAll()
+        settingsViews.removeAll()
+
+        let windowSize = NSSize(width: 440, height: 480)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 980, height: 760),
+            contentRect: NSRect(origin: .zero, size: windowSize),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -1081,21 +1124,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         window.center()
         window.isReleasedWhenClosed = false
         window.level = .normal
+        window.minSize = windowSize
+        window.maxSize = windowSize
 
-        let content = DashboardBackgroundView(frame: window.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 980, height: 760))
+        let content = DashboardBackgroundView(frame: NSRect(origin: .zero, size: windowSize))
         content.autoresizingMask = [.width, .height]
         window.contentView = content
 
-        let columnX: CGFloat = 134
+        let margin: CGFloat = 24
+        let contentWidth = windowSize.width - margin * 2
 
-        let logo = WaveMarkView(frame: NSRect(x: columnX, y: 707, width: 22, height: 20), color: accentColor)
+        let logo = WaveMarkView(frame: NSRect(x: margin, y: 430, width: 24, height: 24), color: accentColor)
         content.addSubview(logo)
 
         let brand = uiLabel("Voi", size: 17, weight: .semibold)
-        brand.frame = NSRect(x: columnX + 34, y: 702, width: 120, height: 28)
+        brand.frame = NSRect(x: margin + 34, y: 426, width: 80, height: 28)
         content.addSubview(brand)
 
-        let tabGroup = NSView(frame: NSRect(x: 606, y: 697, width: 220, height: 36))
+        let status = uiLabel("Ready", size: 12.5, weight: .medium, color: primaryTextColor)
+        status.frame = NSRect(x: windowSize.width - margin - 136, y: 426, width: 136, height: 30)
+        status.alignment = .right
+        content.addSubview(status)
+        statusLabel = status
+
+        let tabGroup = NSView(frame: NSRect(x: margin, y: 376, width: contentWidth, height: 40))
         tabGroup.wantsLayer = true
         tabGroup.layer?.cornerRadius = 10
         tabGroup.layer?.borderWidth = 1
@@ -1103,250 +1155,119 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         tabGroup.layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.05).cgColor
         content.addSubview(tabGroup)
 
-        let overviewTab = VoiButton(frame: NSRect(x: 3, y: 3, width: 104, height: 30))
-        overviewTab.title = "Overview"
+        let overviewTab = VoiButton(frame: NSRect(x: 4, y: 4, width: (contentWidth - 12) / 2, height: 32))
+        overviewTab.title = "Inputs"
         overviewTab.target = self
         overviewTab.action = #selector(showOverviewTab)
         tabGroup.addSubview(overviewTab)
         overviewTabButton = overviewTab
 
-        let settingsTab = VoiButton(frame: NSRect(x: 111, y: 3, width: 104, height: 30))
+        let settingsTab = VoiButton(frame: NSRect(x: 8 + (contentWidth - 12) / 2, y: 4, width: (contentWidth - 12) / 2, height: 32))
         settingsTab.title = "Settings"
         settingsTab.target = self
         settingsTab.action = #selector(showSettingsTab)
         tabGroup.addSubview(settingsTab)
         settingsTabButton = settingsTab
 
-        let status = uiLabel("Ready", size: 12.5, weight: .medium, color: primaryTextColor)
-        status.frame = NSRect(x: 844, y: 700, width: 92, height: 30)
-        status.alignment = .center
-        status.wantsLayer = true
-        status.layer?.cornerRadius = 15
-        status.layer?.borderWidth = 1
-        status.layer?.borderColor = borderColor.cgColor
-        status.layer?.backgroundColor = NSColor(calibratedWhite: 0.03, alpha: 0.32).cgColor
-        content.addSubview(status)
-        statusLabel = status
-
-        let title = uiLabel("Voice where you work", size: 56, weight: .bold)
-        title.frame = NSRect(x: 132, y: 598, width: 700, height: 68)
-        content.addSubview(title)
-        titleLabel = title
-
-        let subtitle = uiLabel("Hold fn/Globe, speak, release to paste.", size: 14, weight: .regular, color: secondaryTextColor)
-        subtitle.frame = NSRect(x: 132, y: 548, width: 560, height: 28)
-        content.addSubview(subtitle)
-        subtitleLabel = subtitle
-
-        let settingsCardWidth: CGFloat = 620
-
-        let permission = uiLabel("Setup health", size: 12, weight: .medium, color: mutedTextColor)
-        permission.frame = NSRect(x: 138, y: 594, width: 180, height: 18)
-        content.addSubview(permission)
-        permissionLabel = permission
-        settingsViews.append(permission)
-
-        let healthCard = makeGroupCard(frame: NSRect(x: 138, y: 438, width: settingsCardWidth, height: 132))
-        content.addSubview(healthCard)
-        settingsViews.append(healthCard)
-        addDivider(to: healthCard, y: 88)
-        addDivider(to: healthCard, y: 44)
-
-        let micLabel = uiLabel("Microphone", size: 14, weight: .regular, color: primaryTextColor)
-        micLabel.frame = NSRect(x: 26, y: 92, width: 180, height: 20)
-        healthCard.addSubview(micLabel)
-
-        let mic = makeStatusValue(frame: NSRect(x: 420, y: 92, width: 172, height: 20))
-        healthCard.addSubview(mic)
-        micChip = mic
-
-        let autoPasteHealthLabel = uiLabel("Auto-Paste", size: 14, weight: .regular, color: primaryTextColor)
-        autoPasteHealthLabel.frame = NSRect(x: 26, y: 48, width: 180, height: 20)
-        healthCard.addSubview(autoPasteHealthLabel)
-
-        let accessibility = makeStatusValue(frame: NSRect(x: 420, y: 48, width: 172, height: 20))
-        healthCard.addSubview(accessibility)
-        accessibilityChip = accessibility
-
-        let apiStatusLabel = uiLabel("API key", size: 14, weight: .regular, color: primaryTextColor)
-        apiStatusLabel.frame = NSRect(x: 26, y: 4, width: 180, height: 20)
-        healthCard.addSubview(apiStatusLabel)
-
-        let inputEvents = makeStatusValue(frame: NSRect(x: 420, y: 4, width: 172, height: 20))
-        healthCard.addSubview(inputEvents)
-        inputChip = inputEvents
-
-        let dictationLabel = uiLabel("Dictation", size: 12, weight: .medium, color: mutedTextColor)
-        dictationLabel.frame = NSRect(x: 138, y: 394, width: 120, height: 18)
-        content.addSubview(dictationLabel)
-        settingsViews.append(dictationLabel)
-
-        let dictationCard = makeGroupCard(frame: NSRect(x: 138, y: 272, width: settingsCardWidth, height: 92))
-        content.addSubview(dictationCard)
-        settingsViews.append(dictationCard)
-
-        let dictationTitle = uiLabel("Auto-Paste after dictation", size: 14, weight: .regular, color: primaryTextColor)
-        dictationTitle.frame = NSRect(x: 26, y: 48, width: 240, height: 20)
-        dictationCard.addSubview(dictationTitle)
-
-        let dictationCopy = uiLabel("Paste the transcript the moment you release the key.", size: 12, weight: .regular, color: mutedTextColor)
-        dictationCopy.frame = NSRect(x: 26, y: 24, width: 360, height: 18)
-        dictationCard.addSubview(dictationCopy)
-
-        let dictationSwitch = makeSwitch(frame: NSRect(x: 532, y: 34, width: 38, height: 22), action: #selector(toggleAutoPasteSwitch))
-        dictationCard.addSubview(dictationSwitch)
-        autoPasteSwitch = dictationSwitch
-
-        let label = uiLabel("Cartesia API key", size: 12, weight: .medium, color: mutedTextColor)
-        label.frame = NSRect(x: 138, y: 228, width: 160, height: 18)
-        content.addSubview(label)
-        settingsViews.append(label)
-
-        let apiCard = makeGroupCard(frame: NSRect(x: 138, y: 118, width: settingsCardWidth, height: 86))
-        content.addSubview(apiCard)
-        settingsViews.append(apiCard)
-
-        let input = NSTextField(frame: NSRect(x: 26, y: 22, width: 492, height: 32))
-        let hasSavedKey = UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty == false
-        input.placeholderString = hasSavedKey ? "Key saved. Paste a new key to replace." : "Paste your Cartesia API key"
-        input.stringValue = ""
-        styleTextField(input)
-        apiCard.addSubview(input)
-        keyField = input
-
-        let saveButton = makeButton(
-            title: "Save",
-            frame: NSRect(x: 530, y: 20, width: 64, height: 36),
-            action: #selector(saveCartesiaKeyFromWindow),
-            accent: !hasSavedKey
-        )
-        saveButton.keyEquivalent = "\r"
-        apiCard.addSubview(saveButton)
-
-        let apiFooter = uiLabel("Stored only on this device.", size: 12, weight: .regular, color: mutedTextColor)
-        apiFooter.frame = NSRect(x: 146, y: 86, width: 220, height: 18)
-        content.addSubview(apiFooter)
-        settingsViews.append(apiFooter)
-
-        let utilitiesLabel = uiLabel("Utilities", size: 12, weight: .medium, color: mutedTextColor)
-        utilitiesLabel.frame = NSRect(x: 138, y: 74, width: 120, height: 18)
-        content.addSubview(utilitiesLabel)
-        settingsViews.append(utilitiesLabel)
-
-        let utilitiesCard = makeGroupCard(frame: NSRect(x: 138, y: 18, width: settingsCardWidth, height: 44))
-        content.addSubview(utilitiesCard)
-        settingsViews.append(utilitiesCard)
-
-        let autoPasteButton = makeButton(
-            title: AXIsProcessTrusted() ? "Auto-Paste on" : "Enable Auto-Paste",
-            frame: NSRect(x: 16, y: 8, width: 138, height: 28),
-            action: #selector(enableAutoPaste),
-            accent: !AXIsProcessTrusted()
-        )
-        utilitiesCard.addSubview(autoPasteButton)
-
-        let hideButton = makeButton(
-            title: "Hide",
-            frame: NSRect(x: 166, y: 8, width: 72, height: 28),
-            action: #selector(hideSetupWindow)
-        )
-        utilitiesCard.addSubview(hideButton)
-
-        let testButton = makeButton(
-            title: "Test paste",
-            frame: NSRect(x: 250, y: 8, width: 90, height: 28),
-            action: #selector(testPaste)
-        )
-        utilitiesCard.addSubview(testButton)
-
-        let manualButton = makeButton(
-            title: "Start dictation",
-            frame: NSRect(x: 352, y: 8, width: 122, height: 28),
-            action: #selector(toggleManualDictation),
-            accent: false
-        )
-        utilitiesCard.addSubview(manualButton)
-        manualDictationButton = manualButton
-
-        let diagnosticsLabel = uiLabel("Diagnostics", size: 12, weight: .medium, color: mutedTextColor)
-        diagnosticsLabel.frame = NSRect(x: 776, y: 594, width: 120, height: 18)
-        content.addSubview(diagnosticsLabel)
-        settingsViews.append(diagnosticsLabel)
-
-        let composerLabel = uiLabel("Latest note", size: 12, weight: .medium, color: mutedTextColor)
-        composerLabel.frame = NSRect(x: 138, y: 470, width: 120, height: 18)
-        content.addSubview(composerLabel)
-        overviewViews.append(composerLabel)
-
-        let composerScroll = NSScrollView(frame: NSRect(x: 138, y: 302, width: 620, height: 142))
-        let composerView = NSTextView(frame: composerScroll.bounds)
-        stylePlainScrollView(composerScroll, textView: composerView)
-        composerView.font = .systemFont(ofSize: 28, weight: .medium)
-        composerView.isSelectable = false
-        composerView.textContainerInset = NSSize(width: 0, height: 0)
-        composerScroll.documentView = composerView
-        content.addSubview(composerScroll)
-        composerTextView = composerView
-        overviewViews.append(composerScroll)
-
-        let shortcut = uiLabel("Waiting for fn/Globe.", size: 12.5, weight: .regular, color: secondaryTextColor)
-        shortcut.frame = NSRect(x: 138, y: 258, width: 220, height: 18)
-        content.addSubview(shortcut)
-        shortcutLabel = shortcut
-        overviewViews.append(shortcut)
-
-        let copyButton = makeButton(
-            title: "Copy",
-            frame: NSRect(x: 690, y: 248, width: 96, height: 34),
-            action: #selector(copyLatestNote)
-        )
-        styleButton(copyButton, accent: true)
-        content.addSubview(copyButton)
-        overviewViews.append(copyButton)
-
-        let notesLabel = uiLabel("Earlier", size: 12, weight: .medium, color: mutedTextColor)
-        notesLabel.frame = NSRect(x: 138, y: 196, width: 220, height: 18)
+        let notesLabel = uiLabel("Past inputs", size: 12, weight: .medium, color: mutedTextColor)
+        notesLabel.frame = NSRect(x: margin, y: 344, width: 160, height: 18)
         content.addSubview(notesLabel)
         overviewViews.append(notesLabel)
 
-        let notesRect = NSRect(x: 138, y: 34, width: 620, height: 146)
+        let notesRect = NSRect(x: margin, y: 96, width: contentWidth, height: 236)
         let scrollView = NSScrollView(frame: notesRect)
         let textView = NSTextView(frame: scrollView.bounds)
         stylePlainScrollView(scrollView, textView: textView)
+        textView.textContainerInset = NSSize(width: 0, height: 0)
+        textView.textContainer?.lineFragmentPadding = 0
         scrollView.documentView = textView
         content.addSubview(scrollView)
         notesScrollView = scrollView
         notesTextView = textView
-        refreshNotesView()
+        composerTextView = nil
         overviewViews.append(scrollView)
 
-        let settingsSummary = uiLabel("Debug key events only when something feels off.", size: 12, weight: .regular, color: mutedTextColor)
-        settingsSummary.frame = NSRect(x: 776, y: 558, width: 170, height: 34)
-        settingsSummary.lineBreakMode = .byWordWrapping
-        settingsSummary.maximumNumberOfLines = 0
-        content.addSubview(settingsSummary)
-        settingsSummaryLabel = settingsSummary
-        settingsViews.append(settingsSummary)
-
-        let diagnosticsButton = makeButton(
-            title: "Show diagnostics",
-            frame: NSRect(x: 776, y: 516, width: 156, height: 32),
-            action: #selector(toggleDiagnostics)
+        let copyButton = makeButton(
+            title: "Copy Latest",
+            frame: NSRect(x: margin, y: 40, width: 120, height: 40),
+            action: #selector(copyLatestNote),
+            accent: true
         )
-        content.addSubview(diagnosticsButton)
-        diagnosticsToggleButton = diagnosticsButton
-        settingsViews.append(diagnosticsButton)
+        content.addSubview(copyButton)
+        overviewViews.append(copyButton)
 
-        let eventScrollView = NSScrollView(frame: NSRect(x: 776, y: 120, width: 160, height: 380))
-        let eventTextView = NSTextView(frame: eventScrollView.bounds)
-        styleScrollView(eventScrollView, textView: eventTextView, mono: true)
-        eventScrollView.documentView = eventTextView
-        eventScrollView.isHidden = true
-        content.addSubview(eventScrollView)
-        eventLogScrollView = eventScrollView
-        eventLogTextView = eventTextView
-        refreshEventLog()
-        settingsViews.append(eventScrollView)
+        let shortcut = uiLabel("Ready across your Mac", size: 12.5, weight: .regular, color: secondaryTextColor)
+        shortcut.frame = NSRect(x: margin + 136, y: 51, width: contentWidth - 136, height: 18)
+        shortcut.alignment = .left
+        content.addSubview(shortcut)
+        shortcutLabel = shortcut
+        overviewViews.append(shortcut)
+
+        let setupLabel = uiLabel("Setup", size: 12, weight: .medium, color: mutedTextColor)
+        setupLabel.frame = NSRect(x: margin, y: 344, width: 160, height: 18)
+        content.addSubview(setupLabel)
+        permissionLabel = setupLabel
+        settingsViews.append(setupLabel)
+
+        let statusCard = makeGroupCard(frame: NSRect(x: margin, y: 264, width: contentWidth, height: 68))
+        content.addSubview(statusCard)
+        settingsViews.append(statusCard)
+
+        let settingsStatusTitle = uiLabel("Ready across your Mac", size: 14, weight: .semibold, color: primaryTextColor)
+        settingsStatusTitle.frame = NSRect(x: 16, y: 36, width: 244, height: 20)
+        statusCard.addSubview(settingsStatusTitle)
+        settingsStatusTitleLabel = settingsStatusTitle
+
+        let settingsStatusDetail = uiLabel("Hold fn/Globe to dictate.", size: 12, weight: .regular, color: mutedTextColor)
+        settingsStatusDetail.frame = NSRect(x: 16, y: 14, width: 244, height: 18)
+        statusCard.addSubview(settingsStatusDetail)
+        settingsStatusDetailLabel = settingsStatusDetail
+
+        let settingsFixButton = makeButton(
+            title: "Fix",
+            frame: NSRect(x: contentWidth - 104, y: 16, width: 88, height: 36),
+            action: #selector(resolveSettingsIssue)
+        )
+        statusCard.addSubview(settingsFixButton)
+        settingsStatusButton = settingsFixButton
+
+        let dictationCard = makeGroupCard(frame: NSRect(x: margin, y: 180, width: contentWidth, height: 68))
+        content.addSubview(dictationCard)
+        settingsViews.append(dictationCard)
+
+        let dictationTitle = uiLabel("Auto-Paste after dictation", size: 14, weight: .regular, color: primaryTextColor)
+        dictationTitle.frame = NSRect(x: 16, y: 36, width: 244, height: 20)
+        dictationCard.addSubview(dictationTitle)
+        let dictationCopy = uiLabel("Send text to the app you were using.", size: 12, weight: .regular, color: mutedTextColor)
+        dictationCopy.frame = NSRect(x: 16, y: 14, width: 252, height: 18)
+        dictationCard.addSubview(dictationCopy)
+        let dictationSwitch = makeSwitch(frame: NSRect(x: contentWidth - 56, y: 23, width: 38, height: 22), action: #selector(toggleAutoPasteSwitch))
+        dictationCard.addSubview(dictationSwitch)
+        autoPasteSwitch = dictationSwitch
+
+        let apiLabel = uiLabel("Speech API key", size: 12, weight: .medium, color: mutedTextColor)
+        apiLabel.frame = NSRect(x: margin, y: 136, width: 160, height: 18)
+        content.addSubview(apiLabel)
+        settingsViews.append(apiLabel)
+
+        let input = VoiTextField(frame: NSRect(x: margin, y: 80, width: 292, height: 40))
+        let hasSavedKey = UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty == false
+        input.placeholderString = hasSavedKey ? "Key saved. Paste a new key." : "Paste your speech API key"
+        input.stringValue = ""
+        styleTextField(input)
+        content.addSubview(input)
+        keyField = input
+        settingsViews.append(input)
+
+        let saveButton = makeButton(
+            title: "Save",
+            frame: NSRect(x: margin + 304, y: 80, width: 88, height: 40),
+            action: #selector(saveCartesiaKeyFromWindow),
+            accent: !hasSavedKey
+        )
+        saveButton.keyEquivalent = "\r"
+        content.addSubview(saveButton)
+        settingsViews.append(saveButton)
 
         setupWindow = window
         if activate {
@@ -1356,6 +1277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             window.orderOut(nil)
         }
         updateSetupCopy()
+        refreshNotesView()
         refreshPermissionStatus(eventTapActive: eventTap != nil)
         updateTabSelection()
         updateDiagnosticsVisibility()
@@ -1366,24 +1288,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         let value = keyField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let hadExistingKey = UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty == false
         if value.isEmpty && hadExistingKey {
-            setStatus("Cartesia key unchanged")
+            setStatus("API key unchanged")
             shortcutLabel?.stringValue = "Key already saved. Paste a new key to replace it."
             return
         }
 
         UserDefaults.standard.set(value, forKey: cartesiaKeyDefaultsKey)
         if value.isEmpty {
-            setStatus("Cartesia key cleared")
-            keyField?.placeholderString = "Paste your Cartesia API key"
-            shortcutLabel?.stringValue = "Add your Cartesia key before recording."
+            setStatus("API key cleared")
+            setPlaceholder("Paste your speech API key", for: keyField)
+            shortcutLabel?.stringValue = "Add your speech API key before recording."
         } else {
-            setStatus("Cartesia key saved")
+            setStatus("API key saved")
             keyField?.stringValue = ""
-            keyField?.placeholderString = "Key saved. Paste a new key to replace."
+            setPlaceholder("Key saved. Paste a new key.", for: keyField)
             shortcutLabel?.stringValue = "Key saved. Hold fn/Globe to dictate."
             updateSetupCopy()
         }
         refreshPermissionStatus(eventTapActive: eventTap != nil)
+    }
+
+    @objc private func resolveSettingsIssue() {
+        switch settingsStatusButton?.tag {
+        case 1:
+            requestMicrophoneAccessOnce()
+        case 2:
+            openMicrophoneSettings()
+        case 3:
+            enableAutoPaste()
+        case 4:
+            showingSettingsTab = true
+            updateTabSelection()
+            setupWindow?.makeFirstResponder(keyField)
+        default:
+            break
+        }
     }
 
     private func updateSetupCopy() {
@@ -1394,7 +1333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             setStatus("Voi ready")
         } else {
             titleLabel?.stringValue = "Set up Voi"
-            subtitleLabel?.stringValue = "Add your Cartesia key, then hold fn/Globe to dictate."
+            subtitleLabel?.stringValue = "Add your speech API key, then hold fn/Globe to dictate."
             statusLabel?.attributedStringValue = NSAttributedString(
                 string: "Not ready",
                 attributes: [
@@ -1466,10 +1405,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             color: hasKey ? NSColor(calibratedRed: 0.19, green: 0.82, blue: 0.35, alpha: 1) : NSColor(calibratedRed: 0.93, green: 0.42, blue: 0.44, alpha: 1)
         )
         autoPasteSwitch?.state = isAccessible ? .on : .off
+        updateSettingsStatus(mic: mic, hasKey: hasKey, isAccessible: isAccessible, eventTapActive: eventTapActive)
         if !showingSettingsTab {
             shortcutLabel?.stringValue = eventTapActive || hasRegisteredHotKey
                 ? "Ready across your Mac"
                 : "Shortcut unavailable"
+        }
+    }
+
+    private func updateSettingsStatus(mic: AVAuthorizationStatus, hasKey: Bool, isAccessible: Bool, eventTapActive: Bool) {
+        let title: String
+        let detail: String
+        let buttonTitle: String?
+        let buttonTag: Int
+        let titleColor: NSColor
+
+        if !hasKey {
+            title = "API key missing"
+            detail = "Add a speech API key before dictating."
+            buttonTitle = "Add Key"
+            buttonTag = 4
+            titleColor = NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 1)
+        } else {
+            switch mic {
+            case .authorized:
+                if !isAccessible {
+                    title = "Auto-Paste is off"
+                    detail = "Allow Accessibility to paste into other apps."
+                    buttonTitle = "Enable"
+                    buttonTag = 3
+                    titleColor = NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 1)
+                } else if !eventTapActive && !hasRegisteredHotKey {
+                    title = "Shortcut unavailable"
+                    detail = "Reopen Voi or check input permissions."
+                    buttonTitle = nil
+                    buttonTag = 0
+                    titleColor = NSColor(calibratedRed: 0.93, green: 0.42, blue: 0.44, alpha: 1)
+                } else {
+                    title = "Ready across your Mac"
+                    detail = "Hold fn/Globe to dictate."
+                    buttonTitle = nil
+                    buttonTag = 0
+                    titleColor = NSColor(calibratedRed: 0.19, green: 0.82, blue: 0.35, alpha: 1)
+                }
+            case .notDetermined:
+                title = "Microphone not allowed"
+                detail = "Allow microphone access to start dictating."
+                buttonTitle = "Allow"
+                buttonTag = 1
+                titleColor = NSColor(calibratedRed: 0.965, green: 0.725, blue: 0.231, alpha: 1)
+            case .denied, .restricted:
+                title = "Microphone blocked"
+                detail = "Enable microphone access in System Settings."
+                buttonTitle = "Open"
+                buttonTag = 2
+                titleColor = NSColor(calibratedRed: 0.93, green: 0.42, blue: 0.44, alpha: 1)
+            @unknown default:
+                title = "Microphone unknown"
+                detail = "Check microphone permissions in System Settings."
+                buttonTitle = "Open"
+                buttonTag = 2
+                titleColor = NSColor(calibratedRed: 0.93, green: 0.42, blue: 0.44, alpha: 1)
+            }
+        }
+
+        settingsStatusTitleLabel?.stringValue = title
+        settingsStatusTitleLabel?.textColor = titleColor
+        settingsStatusDetailLabel?.stringValue = detail
+        settingsStatusButton?.tag = buttonTag
+        settingsStatusButton?.isHidden = buttonTitle == nil
+        if let buttonTitle, let settingsStatusButton {
+            settingsStatusButton.title = buttonTitle
+            styleButton(settingsStatusButton, accent: buttonTag != 0)
         }
     }
 
@@ -1501,7 +1508,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         notesScrollView?.isHidden = showingSettingsTab
         eventLogScrollView?.isHidden = !showingSettingsTab || !diagnosticsExpanded
         settingsSummaryLabel?.isHidden = !showingSettingsTab || diagnosticsExpanded
-        diagnosticsToggleButton?.title = diagnosticsExpanded ? "Hide diagnostics" : "Show diagnostics"
+        diagnosticsToggleButton?.title = diagnosticsExpanded ? "Hide logs" : "Logs"
         if let diagnosticsToggleButton {
             styleButton(diagnosticsToggleButton)
         }
@@ -1623,7 +1630,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
         guard let notesTextView else { return }
         if notes.isEmpty {
-            notesTextView.string = "Your recent notes will appear here."
+            notesTextView.textStorage?.setAttributedString(NSAttributedString(
+                string: "Dictated text will appear here.",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 14, weight: .regular),
+                    .foregroundColor: mutedTextColor,
+                ]
+            ))
             return
         }
 
@@ -1633,21 +1646,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         formatter.timeStyle = .short
 
         let body = NSMutableAttributedString()
-        for (index, note) in notes.dropFirst().enumerated() {
+        for (index, note) in notes.enumerated() {
             if index > 0 {
-                body.append(NSAttributedString(string: "\n\n"))
+                body.append(NSAttributedString(string: "\n"))
             }
             body.append(NSAttributedString(
                 string: "\(formatter.string(from: note.createdAt))\n",
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 12, weight: .regular),
+                    .font: NSFont.systemFont(ofSize: 12, weight: .medium),
                     .foregroundColor: mutedTextColor,
                 ]
             ))
             body.append(NSAttributedString(
-                string: note.text,
+                string: note.text + "\n",
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 14.5, weight: .regular),
+                    .font: NSFont.systemFont(ofSize: 14, weight: .regular),
                     .foregroundColor: secondaryTextColor,
                 ]
             ))
@@ -1895,6 +1908,44 @@ final class VoiButton: NSButton {
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
+    }
+}
+
+final class VoiTextField: NSTextField {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        cell = VoiTextFieldCell(textCell: "")
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        cell = VoiTextFieldCell(textCell: stringValue)
+    }
+}
+
+final class VoiTextFieldCell: NSTextFieldCell {
+    private let horizontalInset: CGFloat = 14
+
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        centeredRect(in: rect)
+    }
+
+    override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, event: NSEvent?) {
+        super.edit(withFrame: centeredRect(in: rect), in: controlView, editor: textObj, delegate: delegate, event: event)
+    }
+
+    override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, start selStart: Int, length selLength: Int) {
+        super.select(withFrame: centeredRect(in: rect), in: controlView, editor: textObj, delegate: delegate, start: selStart, length: selLength)
+    }
+
+    private func centeredRect(in rect: NSRect) -> NSRect {
+        var textRect = super.drawingRect(forBounds: rect)
+        let textHeight = cellSize(forBounds: rect).height
+        textRect.origin.x = rect.origin.x + horizontalInset
+        textRect.size.width = rect.width - horizontalInset * 2
+        textRect.origin.y = rect.origin.y + floor((rect.height - textHeight) / 2)
+        textRect.size.height = textHeight
+        return textRect
     }
 }
 

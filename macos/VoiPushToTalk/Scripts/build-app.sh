@@ -27,6 +27,54 @@ if [[ -z "$GENERATED_ICON" ]]; then
 fi
 mv "$GENERATED_ICON" "$ICON_PNG"
 
+python3 - "$ICON_PNG" <<'PY'
+from collections import deque
+import sys
+from PIL import Image
+
+path = sys.argv[1]
+image = Image.open(path).convert("RGBA")
+pixels = image.load()
+width, height = image.size
+seen = bytearray(width * height)
+queue = deque()
+
+def is_backing(pixel):
+    r, g, b, a = pixel
+    if a == 0:
+        return False
+    neutral = max(r, g, b) - min(r, g, b) <= 4
+    bright_enough = min(r, g, b) >= 48
+    return neutral and bright_enough
+
+for x in range(width):
+    queue.append((x, 0))
+    queue.append((x, height - 1))
+for y in range(1, height - 1):
+    queue.append((0, y))
+    queue.append((width - 1, y))
+
+while queue:
+    x, y = queue.popleft()
+    index = y * width + x
+    if seen[index]:
+        continue
+    seen[index] = 1
+    if not is_backing(pixels[x, y]):
+        continue
+    pixels[x, y] = (255, 255, 255, 0)
+    if x > 0:
+        queue.append((x - 1, y))
+    if x + 1 < width:
+        queue.append((x + 1, y))
+    if y > 0:
+        queue.append((x, y - 1))
+    if y + 1 < height:
+        queue.append((x, y + 1))
+
+image.save(path)
+PY
+
 sips -z 16 16     "$ICON_PNG" --out "$ICONSET/icon_16x16.png" >/dev/null
 sips -z 32 32     "$ICON_PNG" --out "$ICONSET/icon_16x16@2x.png" >/dev/null
 sips -z 32 32     "$ICON_PNG" --out "$ICONSET/icon_32x32.png" >/dev/null
