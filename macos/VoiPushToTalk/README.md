@@ -19,4 +19,4 @@ On first launch, macOS will ask for:
 - Microphone access, so Voi can record while `fn` is held.
 - Accessibility access, so Voi can paste into the app you were using.
 
-Set your Cartesia API key from the Voi menu-bar item.
+Set your speech API key from the Voi menu-bar item.
