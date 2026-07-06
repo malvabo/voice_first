@@ -1029,6 +1029,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     @objc private func setCartesiaKey() {
         showSetupWindow(activate: true)
+        showingSettingsTab = true
+        updateTabSelection()
+        setupWindow?.makeFirstResponder(keyField)
     }
 
     @objc private func enableAutoPaste() {
@@ -1270,9 +1273,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         settingsViews.append(saveButton)
 
         setupWindow = window
+        showingSettingsTab = !hasSavedKey
         if activate {
             window.makeKeyAndOrderFront(nil)
-            window.makeFirstResponder(nil)
+            window.makeFirstResponder(showingSettingsTab ? keyField : nil)
         } else {
             window.orderOut(nil)
         }
@@ -1354,6 +1358,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         showingSettingsTab = true
         updateTabSelection()
         updateDiagnosticsVisibility()
+        if UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty != false {
+            setupWindow?.makeFirstResponder(keyField)
+        }
     }
 
     private func updateTabSelection() {
