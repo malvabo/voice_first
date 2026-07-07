@@ -2093,11 +2093,18 @@ final class VoiButton: NSButton {
 }
 
 final class NoteRowView: NSView {
+    private static weak var hoveredRow: NoteRowView?
+
     let noteText: String
     weak var copyHintLabel: NSTextField?
     private let normalBackgroundColor: NSColor
     private let copiedBackgroundColor: NSColor
     private var hoverTrackingArea: NSTrackingArea?
+    private var isShowingCopyHint = false {
+        didSet {
+            copyHintLabel?.alphaValue = isShowingCopyHint ? 1 : 0
+        }
+    }
 
     init(noteText: String, normalBackgroundColor: NSColor, copiedBackgroundColor: NSColor, frame frameRect: NSRect) {
         self.noteText = noteText
@@ -2124,7 +2131,7 @@ final class NoteRowView: NSView {
         }
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -2135,15 +2142,42 @@ final class NoteRowView: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
-        copyHintLabel?.alphaValue = 1
+        showCopyHint()
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
-        copyHintLabel?.alphaValue = 0
+        hideCopyHint()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        let point = convert(event.locationInWindow, from: nil)
+        bounds.contains(point) ? showCopyHint() : hideCopyHint()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        hideCopyHint()
+    }
+
+    private func showCopyHint() {
+        if NoteRowView.hoveredRow !== self {
+            NoteRowView.hoveredRow?.hideCopyHint()
+            NoteRowView.hoveredRow = self
+        }
+        isShowingCopyHint = true
+    }
+
+    private func hideCopyHint() {
+        if NoteRowView.hoveredRow === self {
+            NoteRowView.hoveredRow = nil
+        }
+        isShowingCopyHint = false
     }
 
     func flashCopied() {
+        hideCopyHint()
         guard let layer else { return }
         layer.backgroundColor = copiedBackgroundColor.cgColor
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) { [weak self, weak layer] in
