@@ -261,7 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         button.attributedTitle = NSAttributedString(
             string: button.title,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
                 .foregroundColor: active ? primaryTextColor : secondaryTextColor,
             ]
         )
@@ -1156,28 +1156,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         brand.frame = NSRect(x: margin + 34, y: 426, width: 80, height: 28)
         content.addSubview(brand)
 
-        let status = uiLabel("Ready", size: 12.5, weight: .medium, color: primaryTextColor)
-        status.frame = NSRect(x: windowSize.width - margin - 136, y: 426, width: 136, height: 30)
-        status.alignment = .right
-        content.addSubview(status)
-        statusLabel = status
-
-        let tabGroup = NSView(frame: NSRect(x: margin, y: 376, width: contentWidth, height: 40))
+        let tabGroup = NSView(frame: NSRect(x: margin, y: 386, width: contentWidth, height: 32))
         tabGroup.wantsLayer = true
-        tabGroup.layer?.cornerRadius = 10
+        tabGroup.layer?.cornerRadius = 9
         tabGroup.layer?.borderWidth = 1
         tabGroup.layer?.borderColor = borderColor.cgColor
         tabGroup.layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.05).cgColor
         content.addSubview(tabGroup)
 
-        let overviewTab = VoiButton(frame: NSRect(x: 4, y: 4, width: (contentWidth - 12) / 2, height: 32))
+        let overviewTab = VoiButton(frame: NSRect(x: 3, y: 3, width: (contentWidth - 9) / 2, height: 26))
         overviewTab.title = "Inputs"
         overviewTab.target = self
         overviewTab.action = #selector(showOverviewTab)
         tabGroup.addSubview(overviewTab)
         overviewTabButton = overviewTab
 
-        let settingsTab = VoiButton(frame: NSRect(x: 8 + (contentWidth - 12) / 2, y: 4, width: (contentWidth - 12) / 2, height: 32))
+        let settingsTab = VoiButton(frame: NSRect(x: 6 + (contentWidth - 9) / 2, y: 3, width: (contentWidth - 9) / 2, height: 26))
         settingsTab.title = "Settings"
         settingsTab.target = self
         settingsTab.action = #selector(showSettingsTab)
@@ -1185,11 +1179,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         settingsTabButton = settingsTab
 
         let notesLabel = uiLabel("Past inputs", size: 12, weight: .medium, color: mutedTextColor)
-        notesLabel.frame = NSRect(x: margin, y: 344, width: 160, height: 18)
+        notesLabel.frame = NSRect(x: margin, y: 350, width: 160, height: 18)
         content.addSubview(notesLabel)
         overviewViews.append(notesLabel)
 
-        let notesRect = NSRect(x: margin, y: 118, width: contentWidth, height: 214)
+        let notesRect = NSRect(x: margin, y: 92, width: contentWidth, height: 242)
         let scrollView = NSScrollView(frame: notesRect)
         let textView = NSTextView(frame: scrollView.bounds)
         stylePlainScrollView(scrollView, textView: textView)
@@ -1202,7 +1196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         composerTextView = nil
         overviewViews.append(scrollView)
 
-        let footerDivider = NSView(frame: NSRect(x: margin, y: 96, width: contentWidth, height: 1))
+        let footerDivider = NSView(frame: NSRect(x: margin, y: 78, width: contentWidth, height: 1))
         footerDivider.wantsLayer = true
         footerDivider.layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.07).cgColor
         content.addSubview(footerDivider)
@@ -1210,7 +1204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
         let copyButton = makeButton(
             title: "Copy Latest",
-            frame: NSRect(x: margin, y: 40, width: 120, height: 40),
+            frame: NSRect(x: margin, y: 24, width: 116, height: 36),
             action: #selector(copyLatestNote),
             accent: true
         )
@@ -1218,8 +1212,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         copyLatestButton = copyButton
         overviewViews.append(copyButton)
 
-        let shortcut = uiLabel("Ready across your Mac", size: 12.5, weight: .regular, color: secondaryTextColor)
-        shortcut.frame = NSRect(x: margin + 136, y: 51, width: contentWidth - 136, height: 18)
+        let shortcut = uiLabel("Hold fn/Globe to dictate", size: 12.5, weight: .regular, color: secondaryTextColor)
+        shortcut.frame = NSRect(x: margin + 132, y: 33, width: contentWidth - 132, height: 18)
         shortcut.alignment = .left
         content.addSubview(shortcut)
         shortcutLabel = shortcut
@@ -1235,7 +1229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.addSubview(statusCard)
         settingsViews.append(statusCard)
 
-        let settingsStatusTitle = uiLabel("Ready across your Mac", size: 14, weight: .semibold, color: primaryTextColor)
+        let settingsStatusTitle = uiLabel("Dictation is on", size: 14, weight: .semibold, color: primaryTextColor)
         settingsStatusTitle.frame = NSRect(x: 16, y: 36, width: 244, height: 20)
         statusCard.addSubview(settingsStatusTitle)
         settingsStatusTitleLabel = settingsStatusTitle
@@ -1434,7 +1428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         updateSettingsStatus(mic: mic, hasKey: hasKey, isAccessible: isAccessible, eventTapActive: eventTapActive)
         if !showingSettingsTab {
             shortcutLabel?.stringValue = eventTapActive || hasRegisteredHotKey
-                ? "Ready across your Mac"
+                ? "Hold fn/Globe to dictate"
                 : "Shortcut unavailable"
         }
     }
@@ -1468,7 +1462,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                     buttonTag = 0
                     titleColor = voiDanger
                 } else {
-                    title = "Ready across your Mac"
+                    title = "Dictation is on"
                     detail = "Hold fn/Globe to dictate."
                     buttonTitle = nil
                     buttonTag = 0
@@ -1681,7 +1675,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
         let calendar = Calendar.current
         let textParagraph = NSMutableParagraphStyle()
-        textParagraph.lineSpacing = 1
+        textParagraph.lineSpacing = 2
+        textParagraph.paragraphSpacing = 8
 
         let body = NSMutableAttributedString()
         var previousDay: Date?
@@ -1696,13 +1691,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
             let stampParagraph = NSMutableParagraphStyle()
             stampParagraph.lineSpacing = 1
-            stampParagraph.paragraphSpacingBefore = index == 0 ? 0 : 18
-            stampParagraph.paragraphSpacing = 3
+            stampParagraph.paragraphSpacingBefore = index == 0 ? 0 : 14
+            stampParagraph.paragraphSpacing = 4
 
             body.append(NSAttributedString(
                 string: "\(stamp)\n",
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 11.5, weight: .medium),
+                    .font: NSFont.systemFont(ofSize: 10.5, weight: .medium),
                     .foregroundColor: mutedTextColor,
                     .paragraphStyle: stampParagraph,
                 ]
@@ -1710,11 +1705,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             body.append(NSAttributedString(
                 string: note.text + "\n",
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 14.5, weight: .regular),
+                    .font: NSFont.systemFont(ofSize: 14, weight: .regular),
                     .foregroundColor: primaryTextColor,
                     .paragraphStyle: textParagraph,
                 ]
             ))
+            if index < notes.count - 1 {
+                body.append(NSAttributedString(
+                    string: "\n",
+                    attributes: [
+                        .font: NSFont.systemFont(ofSize: 3, weight: .regular),
+                        .foregroundColor: NSColor.clear,
+                    ]
+                ))
+                body.append(NSAttributedString(
+                    string: "────────────────────────────\n",
+                    attributes: [
+                        .font: NSFont.systemFont(ofSize: 9, weight: .regular),
+                        .foregroundColor: borderColor.withAlphaComponent(0.85),
+                    ]
+                ))
+            }
         }
         notesTextView.textStorage?.setAttributedString(body)
     }
