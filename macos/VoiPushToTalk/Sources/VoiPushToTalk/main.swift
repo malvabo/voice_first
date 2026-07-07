@@ -313,6 +313,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 
     private func styleTextField(_ input: NSTextField) {
+        input.isEnabled = true
+        input.isEditable = true
+        input.isSelectable = true
+        input.refusesFirstResponder = false
         input.font = voiFont(ofSize: 14, weight: .regular)
         input.textColor = primaryTextColor
         setPlaceholder(input.placeholderString ?? "", for: input)
@@ -1329,8 +1333,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 
     @objc private func saveCartesiaKeyFromWindow() {
+        let rawValue = keyField?.currentEditor()?.string ?? keyField?.stringValue ?? ""
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         setupWindow?.makeFirstResponder(nil)
-        let value = keyField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let hadExistingKey = UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty == false
         if value.isEmpty && hadExistingKey {
             setStatus("API key unchanged")
