@@ -1743,17 +1743,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         row.layer?.borderWidth = 1
         row.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: emphasized ? 0.075 : 0.045).cgColor
         row.layer?.backgroundColor = rowBackground.cgColor
-        row.toolTip = "Double-click to copy"
+        row.toolTip = "Click to copy"
 
-        let doubleClick = NSClickGestureRecognizer(target: self, action: #selector(copyNoteFromRow(_:)))
-        doubleClick.numberOfClicksRequired = 2
-        row.addGestureRecognizer(doubleClick)
+        let click = NSClickGestureRecognizer(target: self, action: #selector(copyNoteFromRow(_:)))
+        click.numberOfClicksRequired = 1
+        row.addGestureRecognizer(click)
 
         let stampLabel = uiLabel(stamp, size: 10.5, weight: .medium, color: mutedTextColor)
         stampLabel.frame = NSRect(x: padding, y: padding, width: max(0, contentWidth - hintWidth - 8), height: timestampHeight)
         row.addSubview(stampLabel)
 
-        let hintLabel = uiLabel("Double-click", size: 10.5, weight: .medium, color: mutedTextColor.withAlphaComponent(0.76))
+        let hintLabel = uiLabel("Copy", size: 10.5, weight: .medium, color: mutedTextColor.withAlphaComponent(0.76))
         hintLabel.alignment = .right
         hintLabel.frame = NSRect(x: width - padding - hintWidth, y: padding, width: hintWidth, height: timestampHeight)
         row.addSubview(hintLabel)
