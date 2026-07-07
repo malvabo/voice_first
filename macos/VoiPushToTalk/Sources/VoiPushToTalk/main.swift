@@ -289,16 +289,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         button.bezelStyle = .regularSquare
         button.alignment = .center
         button.wantsLayer = true
-        button.layer?.cornerRadius = 8
-        button.layer?.borderWidth = 0
+        button.layer?.cornerRadius = 13
+        button.layer?.borderWidth = active ? 1 : 0
+        button.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: 0.70).cgColor
         button.layer?.backgroundColor = active
-            ? NSColor(calibratedWhite: 1, alpha: 0.12).cgColor
+            ? NSColor(calibratedWhite: 0.96, alpha: 1).cgColor
             : NSColor.clear.cgColor
         button.attributedTitle = NSAttributedString(
             string: button.title,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-                .foregroundColor: active ? primaryTextColor : secondaryTextColor,
+                .foregroundColor: active ? NSColor(calibratedWhite: 0.12, alpha: 1) : NSColor(calibratedWhite: 0.78, alpha: 1),
             ]
         )
     }
@@ -1197,26 +1198,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         brand.frame = NSRect(x: margin + 34, y: 426, width: 80, height: 28)
         content.addSubview(brand)
 
-        let tabWidth: CGFloat = 168
-        let tabInset: CGFloat = 3
-        let tabGap: CGFloat = 4
+        let tabWidth: CGFloat = 188
+        let tabInset: CGFloat = 4
+        let tabGap: CGFloat = 6
         let tabButtonWidth = (tabWidth - tabInset * 2 - tabGap) / 2
-        let tabGroup = NSView(frame: NSRect(x: windowSize.width - margin - tabWidth, y: 426, width: tabWidth, height: 30))
+        let tabGroup = NSView(frame: NSRect(x: windowSize.width - margin - tabWidth, y: 424, width: tabWidth, height: 34))
         tabGroup.wantsLayer = true
-        tabGroup.layer?.cornerRadius = 9
+        tabGroup.layer?.cornerRadius = 17
         tabGroup.layer?.borderWidth = 1
-        tabGroup.layer?.borderColor = borderColor.cgColor
-        tabGroup.layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.05).cgColor
+        tabGroup.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: 0.10).cgColor
+        tabGroup.layer?.backgroundColor = NSColor(calibratedWhite: 0.12, alpha: 0.72).cgColor
         content.addSubview(tabGroup)
 
-        let overviewTab = VoiButton(frame: NSRect(x: tabInset, y: 3, width: tabButtonWidth, height: 24))
+        let overviewTab = VoiButton(frame: NSRect(x: tabInset, y: 4, width: tabButtonWidth, height: 26))
         overviewTab.title = "Inputs"
         overviewTab.target = self
         overviewTab.action = #selector(showOverviewTab)
         tabGroup.addSubview(overviewTab)
         overviewTabButton = overviewTab
 
-        let settingsTab = VoiButton(frame: NSRect(x: tabInset + tabButtonWidth + tabGap, y: 3, width: tabButtonWidth, height: 24))
+        let settingsTab = VoiButton(frame: NSRect(x: tabInset + tabButtonWidth + tabGap, y: 4, width: tabButtonWidth, height: 26))
         settingsTab.title = "Settings"
         settingsTab.target = self
         settingsTab.action = #selector(showSettingsTab)
