@@ -101,7 +101,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private var subtitleLabel: NSTextField?
     private var notesScrollView: NSScrollView?
     private var notesContainerView: NSView?
-    private var copyLatestButton: NSButton?
     private var composerTextView: NSTextView?
     private var permissionLabel: NSTextField?
     private var settingsStatusTitleLabel: NSTextField?
@@ -1204,18 +1203,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.addSubview(footerDivider)
         overviewViews.append(footerDivider)
 
-        let copyButton = makeButton(
-            title: "Copy Latest",
-            frame: NSRect(x: margin, y: 18, width: 112, height: 34),
-            action: #selector(copyLatestNote),
-            accent: true
-        )
-        content.addSubview(copyButton)
-        copyLatestButton = copyButton
-        overviewViews.append(copyButton)
-
         let shortcut = uiLabel("Hold fn/Globe to dictate", size: 12.5, weight: .regular, color: secondaryTextColor)
-        shortcut.frame = NSRect(x: margin + 128, y: 26, width: contentWidth - 128, height: 18)
+        shortcut.frame = NSRect(x: margin, y: 26, width: contentWidth, height: 18)
         shortcut.alignment = .left
         content.addSubview(shortcut)
         shortcutLabel = shortcut
@@ -1536,16 +1525,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         }
     }
 
-    @objc private func copyLatestNote() {
-        guard let text = notes.first?.text, !text.isEmpty else {
-            setStatus("Nothing to copy yet")
-            shortcutLabel?.stringValue = "No recorded note to copy yet."
-            return
-        }
-
-        copyNoteToClipboard(text, label: "Latest input")
-    }
-
     private func copyNoteToClipboard(_ text: String, label: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -1663,10 +1642,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 
     private func refreshNotesView() {
-        copyLatestButton?.isEnabled = !notes.isEmpty
-        if let copyLatestButton {
-            styleButton(copyLatestButton, accent: !notes.isEmpty)
-        }
         composerTextView?.string = notes.first?.text
             ?? "Nothing dictated yet."
         composerTextView?.textColor = notes.first == nil ? mutedTextColor : primaryTextColor
@@ -1753,10 +1728,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         stampLabel.frame = NSRect(x: padding, y: padding, width: max(0, contentWidth - hintWidth - 8), height: timestampHeight)
         row.addSubview(stampLabel)
 
-        let hintLabel = uiLabel("Copy", size: 10.5, weight: .medium, color: mutedTextColor.withAlphaComponent(0.76))
+        let hintLabel = uiLabel("Click to copy", size: 10.5, weight: .medium, color: mutedTextColor.withAlphaComponent(0.76))
         hintLabel.alignment = .right
         hintLabel.frame = NSRect(x: width - padding - hintWidth, y: padding, width: hintWidth, height: timestampHeight)
+        hintLabel.alphaValue = 0
         row.addSubview(hintLabel)
+        row.copyHintLabel = hintLabel
 
         let textLabel = uiLabel(text, size: 14, weight: emphasized ? .medium : .regular, color: primaryTextColor)
         textLabel.lineBreakMode = .byWordWrapping
@@ -2012,8 +1989,10 @@ final class VoiButton: NSButton {
 
 final class NoteRowView: NSView {
     let noteText: String
+    weak var copyHintLabel: NSTextField?
     private let normalBackgroundColor: NSColor
     private let copiedBackgroundColor: NSColor
+    private var hoverTrackingArea: NSTrackingArea?
 
     init(noteText: String, normalBackgroundColor: NSColor, copiedBackgroundColor: NSColor, frame frameRect: NSRect) {
         self.noteText = noteText
@@ -2031,6 +2010,29 @@ final class NoteRowView: NSView {
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    override func updateTrackingAreas() {
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
+        super.updateTrackingAreas()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        copyHintLabel?.alphaValue = 1
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        copyHintLabel?.alphaValue = 0
     }
 
     func flashCopied() {
