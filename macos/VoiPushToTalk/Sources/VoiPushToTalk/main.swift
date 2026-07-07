@@ -99,8 +99,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private var statusLabel: NSTextField?
     private var titleLabel: NSTextField?
     private var subtitleLabel: NSTextField?
-    private var notesTextView: NSTextView?
     private var notesScrollView: NSScrollView?
+    private var notesContainerView: NSView?
     private var copyLatestButton: NSButton?
     private var composerTextView: NSTextView?
     private var permissionLabel: NSTextField?
@@ -1156,7 +1156,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         brand.frame = NSRect(x: margin + 34, y: 426, width: 80, height: 28)
         content.addSubview(brand)
 
-        let tabGroup = NSView(frame: NSRect(x: margin, y: 386, width: contentWidth, height: 32))
+        let tabWidth: CGFloat = 224
+        let tabGroup = NSView(frame: NSRect(x: windowSize.width - margin - tabWidth, y: 426, width: tabWidth, height: 30))
         tabGroup.wantsLayer = true
         tabGroup.layer?.cornerRadius = 9
         tabGroup.layer?.borderWidth = 1
@@ -1164,14 +1165,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         tabGroup.layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.05).cgColor
         content.addSubview(tabGroup)
 
-        let overviewTab = VoiButton(frame: NSRect(x: 3, y: 3, width: (contentWidth - 9) / 2, height: 26))
+        let overviewTab = VoiButton(frame: NSRect(x: 3, y: 3, width: (tabWidth - 9) / 2, height: 24))
         overviewTab.title = "Inputs"
         overviewTab.target = self
         overviewTab.action = #selector(showOverviewTab)
         tabGroup.addSubview(overviewTab)
         overviewTabButton = overviewTab
 
-        let settingsTab = VoiButton(frame: NSRect(x: 6 + (contentWidth - 9) / 2, y: 3, width: (contentWidth - 9) / 2, height: 26))
+        let settingsTab = VoiButton(frame: NSRect(x: 6 + (tabWidth - 9) / 2, y: 3, width: (tabWidth - 9) / 2, height: 24))
         settingsTab.title = "Settings"
         settingsTab.target = self
         settingsTab.action = #selector(showSettingsTab)
@@ -1179,24 +1180,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         settingsTabButton = settingsTab
 
         let notesLabel = uiLabel("Past inputs", size: 12, weight: .medium, color: mutedTextColor)
-        notesLabel.frame = NSRect(x: margin, y: 350, width: 160, height: 18)
+        notesLabel.frame = NSRect(x: margin, y: 374, width: 160, height: 18)
         content.addSubview(notesLabel)
         overviewViews.append(notesLabel)
 
-        let notesRect = NSRect(x: margin, y: 92, width: contentWidth, height: 242)
+        let notesRect = NSRect(x: margin, y: 82, width: contentWidth, height: 276)
         let scrollView = NSScrollView(frame: notesRect)
-        let textView = NSTextView(frame: scrollView.bounds)
-        stylePlainScrollView(scrollView, textView: textView)
-        textView.textContainerInset = NSSize(width: 0, height: 0)
-        textView.textContainer?.lineFragmentPadding = 0
-        scrollView.documentView = textView
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.drawsBackground = false
+        scrollView.wantsLayer = false
+        let notesContainer = FlippedView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: notesRect.height))
+        scrollView.documentView = notesContainer
         content.addSubview(scrollView)
         notesScrollView = scrollView
-        notesTextView = textView
+        notesContainerView = notesContainer
         composerTextView = nil
         overviewViews.append(scrollView)
 
-        let footerDivider = NSView(frame: NSRect(x: margin, y: 78, width: contentWidth, height: 1))
+        let footerDivider = NSView(frame: NSRect(x: margin, y: 68, width: contentWidth, height: 1))
         footerDivider.wantsLayer = true
         footerDivider.layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.07).cgColor
         content.addSubview(footerDivider)
@@ -1204,7 +1206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
         let copyButton = makeButton(
             title: "Copy Latest",
-            frame: NSRect(x: margin, y: 24, width: 116, height: 36),
+            frame: NSRect(x: margin, y: 18, width: 112, height: 34),
             action: #selector(copyLatestNote),
             accent: true
         )
@@ -1213,7 +1215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         overviewViews.append(copyButton)
 
         let shortcut = uiLabel("Hold fn/Globe to dictate", size: 12.5, weight: .regular, color: secondaryTextColor)
-        shortcut.frame = NSRect(x: margin + 132, y: 33, width: contentWidth - 132, height: 18)
+        shortcut.frame = NSRect(x: margin + 128, y: 26, width: contentWidth - 128, height: 18)
         shortcut.alignment = .left
         content.addSubview(shortcut)
         shortcutLabel = shortcut
@@ -1652,15 +1654,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             ?? "Nothing dictated yet."
         composerTextView?.textColor = notes.first == nil ? mutedTextColor : primaryTextColor
 
-        guard let notesTextView else { return }
+        guard let notesContainerView, let notesScrollView else { return }
+        notesContainerView.subviews.forEach { $0.removeFromSuperview() }
+        let contentWidth = notesScrollView.contentView.bounds.width
+        let visibleHeight = notesScrollView.contentView.bounds.height
+
         if notes.isEmpty {
-            notesTextView.textStorage?.setAttributedString(NSAttributedString(
-                string: "Dictated text will appear here.",
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 14, weight: .regular),
-                    .foregroundColor: mutedTextColor,
-                ]
-            ))
+            let empty = uiLabel("Dictated text will appear here.", size: 14, weight: .regular, color: mutedTextColor)
+            empty.frame = NSRect(x: 0, y: 0, width: contentWidth, height: 24)
+            notesContainerView.addSubview(empty)
+            notesContainerView.frame = NSRect(x: 0, y: 0, width: contentWidth, height: visibleHeight)
             return
         }
 
@@ -1674,60 +1677,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         timeFormatter.timeStyle = .short
 
         let calendar = Calendar.current
-        let textParagraph = NSMutableParagraphStyle()
-        textParagraph.lineSpacing = 2
-        textParagraph.paragraphSpacing = 8
-
-        let body = NSMutableAttributedString()
+        var y: CGFloat = 0
         var previousDay: Date?
         for (index, note) in notes.enumerated() {
-            // Only repeat the full date when the day changes; otherwise show
-            // just the time so a run of same-day entries reads cleanly.
             let day = calendar.startOfDay(for: note.createdAt)
             let stamp = previousDay == day
                 ? timeFormatter.string(from: note.createdAt)
                 : "\(dayFormatter.string(from: note.createdAt))  ·  \(timeFormatter.string(from: note.createdAt))"
             previousDay = day
 
-            let stampParagraph = NSMutableParagraphStyle()
-            stampParagraph.lineSpacing = 1
-            stampParagraph.paragraphSpacingBefore = index == 0 ? 0 : 14
-            stampParagraph.paragraphSpacing = 4
-
-            body.append(NSAttributedString(
-                string: "\(stamp)\n",
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 10.5, weight: .medium),
-                    .foregroundColor: mutedTextColor,
-                    .paragraphStyle: stampParagraph,
-                ]
-            ))
-            body.append(NSAttributedString(
-                string: note.text + "\n",
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 14, weight: .regular),
-                    .foregroundColor: primaryTextColor,
-                    .paragraphStyle: textParagraph,
-                ]
-            ))
-            if index < notes.count - 1 {
-                body.append(NSAttributedString(
-                    string: "\n",
-                    attributes: [
-                        .font: NSFont.systemFont(ofSize: 3, weight: .regular),
-                        .foregroundColor: NSColor.clear,
-                    ]
-                ))
-                body.append(NSAttributedString(
-                    string: "────────────────────────────\n",
-                    attributes: [
-                        .font: NSFont.systemFont(ofSize: 9, weight: .regular),
-                        .foregroundColor: borderColor.withAlphaComponent(0.85),
-                    ]
-                ))
-            }
+            let row = makeNoteRow(stamp: stamp, text: note.text, width: contentWidth, emphasized: index == 0)
+            row.frame.origin = NSPoint(x: 0, y: y)
+            notesContainerView.addSubview(row)
+            y += row.frame.height + 10
         }
-        notesTextView.textStorage?.setAttributedString(body)
+        notesContainerView.frame = NSRect(x: 0, y: 0, width: contentWidth, height: max(visibleHeight, y))
+    }
+
+    private func makeNoteRow(stamp: String, text: String, width: CGFloat, emphasized: Bool) -> NSView {
+        let padding: CGFloat = 14
+        let timestampHeight: CGFloat = 14
+        let textFont = NSFont.systemFont(ofSize: 14, weight: emphasized ? .medium : .regular)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 2
+        let textRect = (text as NSString).boundingRect(
+            with: NSSize(width: width - padding * 2, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [
+                .font: textFont,
+                .paragraphStyle: paragraph,
+            ]
+        )
+        let textHeight = ceil(textRect.height)
+        let rowHeight = max(58, padding + timestampHeight + 6 + textHeight + padding)
+
+        let row = NSView(frame: NSRect(x: 0, y: 0, width: width, height: rowHeight))
+        row.wantsLayer = true
+        row.layer?.cornerRadius = 10
+        row.layer?.borderWidth = 1
+        row.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: emphasized ? 0.075 : 0.045).cgColor
+        row.layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: emphasized ? 0.045 : 0.024).cgColor
+
+        let stampLabel = uiLabel(stamp, size: 10.5, weight: .medium, color: mutedTextColor)
+        stampLabel.frame = NSRect(x: padding, y: padding, width: width - padding * 2, height: timestampHeight)
+        row.addSubview(stampLabel)
+
+        let textLabel = uiLabel(text, size: 14, weight: emphasized ? .medium : .regular, color: primaryTextColor)
+        textLabel.lineBreakMode = .byWordWrapping
+        textLabel.maximumNumberOfLines = 0
+        textLabel.frame = NSRect(x: padding, y: padding + timestampHeight + 6, width: width - padding * 2, height: textHeight + 2)
+        row.addSubview(textLabel)
+
+        return row
     }
 
     @objc private func quit() {
@@ -1971,6 +1972,10 @@ final class VoiButton: NSButton {
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
     }
+}
+
+final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
 }
 
 final class VoiTextField: NSTextField {
