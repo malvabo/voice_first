@@ -293,15 +293,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         button.wantsLayer = true
         button.layer?.cornerRadius = 13
         button.layer?.borderWidth = active ? 1 : 0
-        button.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: 0.70).cgColor
+        button.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: 0.16).cgColor
         button.layer?.backgroundColor = active
-            ? NSColor(calibratedWhite: 0.96, alpha: 1).cgColor
+            ? NSColor(calibratedWhite: 1, alpha: 0.18).cgColor
             : NSColor.clear.cgColor
         button.attributedTitle = NSAttributedString(
             string: button.title,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-                .foregroundColor: active ? NSColor(calibratedWhite: 0.12, alpha: 1) : NSColor(calibratedWhite: 0.78, alpha: 1),
+                .foregroundColor: active ? primaryTextColor : NSColor(calibratedWhite: 0.78, alpha: 1),
             ]
         )
     }
@@ -316,13 +316,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         button.wantsLayer = true
         button.layer?.cornerRadius = 13
         button.layer?.borderWidth = 1
-        button.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: 0.70).cgColor
-        button.layer?.backgroundColor = NSColor(calibratedWhite: 0.96, alpha: 1).cgColor
+        button.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: 0.16).cgColor
+        button.layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.18).cgColor
         button.attributedTitle = NSAttributedString(
             string: button.title,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1),
+                .foregroundColor: primaryTextColor,
             ]
         )
     }
