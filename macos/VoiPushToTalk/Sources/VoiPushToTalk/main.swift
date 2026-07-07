@@ -1543,10 +1543,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             return
         }
 
+        copyNoteToClipboard(text, label: "Latest input")
+    }
+
+    private func copyNoteToClipboard(_ text: String, label: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            setStatus("Nothing to copy yet")
+            shortcutLabel?.stringValue = "No recorded note to copy yet."
+            return
+        }
+
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        NSPasteboard.general.setString(trimmed, forType: .string)
         setStatus("Copied")
-        shortcutLabel?.stringValue = "Latest note copied to clipboard."
+        shortcutLabel?.stringValue = "\(label) copied to clipboard."
+    }
+
+    @objc private func copyNoteFromRow(_ recognizer: NSClickGestureRecognizer) {
+        guard let row = recognizer.view as? NoteRowView else { return }
+        copyNoteToClipboard(row.noteText, label: "Input")
+        row.flashCopied()
     }
 
     fileprivate func logKeyEvent(type: CGEventType, keyCode: Int64, flags: CGEventFlags) {
@@ -1700,8 +1717,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         let textFont = NSFont.systemFont(ofSize: 14, weight: emphasized ? .medium : .regular)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 2
+        let contentWidth = width - padding * 2
+        let hintWidth: CGFloat = 98
         let textRect = (text as NSString).boundingRect(
-            with: NSSize(width: width - padding * 2, height: .greatestFiniteMagnitude),
+            with: NSSize(width: contentWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [
                 .font: textFont,
@@ -1711,21 +1730,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         let textHeight = ceil(textRect.height)
         let rowHeight = max(58, padding + timestampHeight + 6 + textHeight + padding)
 
-        let row = NSView(frame: NSRect(x: 0, y: 0, width: width, height: rowHeight))
+        let rowBackground = NSColor(calibratedWhite: 1, alpha: emphasized ? 0.045 : 0.024)
+        let copiedBackground = NSColor(calibratedRed: 0.92, green: 0.72, blue: 0.26, alpha: 0.13)
+        let row = NoteRowView(
+            noteText: text,
+            normalBackgroundColor: rowBackground,
+            copiedBackgroundColor: copiedBackground,
+            frame: NSRect(x: 0, y: 0, width: width, height: rowHeight)
+        )
         row.wantsLayer = true
         row.layer?.cornerRadius = 10
         row.layer?.borderWidth = 1
         row.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: emphasized ? 0.075 : 0.045).cgColor
-        row.layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: emphasized ? 0.045 : 0.024).cgColor
+        row.layer?.backgroundColor = rowBackground.cgColor
+        row.toolTip = "Double-click to copy"
+
+        let doubleClick = NSClickGestureRecognizer(target: self, action: #selector(copyNoteFromRow(_:)))
+        doubleClick.numberOfClicksRequired = 2
+        row.addGestureRecognizer(doubleClick)
 
         let stampLabel = uiLabel(stamp, size: 10.5, weight: .medium, color: mutedTextColor)
-        stampLabel.frame = NSRect(x: padding, y: padding, width: width - padding * 2, height: timestampHeight)
+        stampLabel.frame = NSRect(x: padding, y: padding, width: max(0, contentWidth - hintWidth - 8), height: timestampHeight)
         row.addSubview(stampLabel)
+
+        let hintLabel = uiLabel("Double-click", size: 10.5, weight: .medium, color: mutedTextColor.withAlphaComponent(0.76))
+        hintLabel.alignment = .right
+        hintLabel.frame = NSRect(x: width - padding - hintWidth, y: padding, width: hintWidth, height: timestampHeight)
+        row.addSubview(hintLabel)
 
         let textLabel = uiLabel(text, size: 14, weight: emphasized ? .medium : .regular, color: primaryTextColor)
         textLabel.lineBreakMode = .byWordWrapping
         textLabel.maximumNumberOfLines = 0
-        textLabel.frame = NSRect(x: padding, y: padding + timestampHeight + 6, width: width - padding * 2, height: textHeight + 2)
+        textLabel.frame = NSRect(x: padding, y: padding + timestampHeight + 6, width: contentWidth, height: textHeight + 2)
         row.addSubview(textLabel)
 
         return row
@@ -1971,6 +2007,39 @@ final class VoiButton: NSButton {
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
+    }
+}
+
+final class NoteRowView: NSView {
+    let noteText: String
+    private let normalBackgroundColor: NSColor
+    private let copiedBackgroundColor: NSColor
+
+    init(noteText: String, normalBackgroundColor: NSColor, copiedBackgroundColor: NSColor, frame frameRect: NSRect) {
+        self.noteText = noteText
+        self.normalBackgroundColor = normalBackgroundColor
+        self.copiedBackgroundColor = copiedBackgroundColor
+        super.init(frame: frameRect)
+    }
+
+    required init?(coder: NSCoder) {
+        noteText = ""
+        normalBackgroundColor = NSColor(calibratedWhite: 1, alpha: 0.024)
+        copiedBackgroundColor = NSColor(calibratedRed: 0.92, green: 0.72, blue: 0.26, alpha: 0.13)
+        super.init(coder: coder)
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    func flashCopied() {
+        guard let layer else { return }
+        layer.backgroundColor = copiedBackgroundColor.cgColor
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) { [weak self, weak layer] in
+            guard let self, let layer else { return }
+            layer.backgroundColor = self.normalBackgroundColor.cgColor
+        }
     }
 }
 
