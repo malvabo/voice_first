@@ -1248,12 +1248,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         overviewViews.append(shortcut)
 
         let setupLabel = uiLabel("Setup", size: 12, weight: .medium, color: mutedTextColor)
-        setupLabel.frame = NSRect(x: margin, y: 344, width: 160, height: 18)
+        setupLabel.frame = NSRect(x: margin, y: 372, width: 160, height: 18)
         content.addSubview(setupLabel)
         permissionLabel = setupLabel
         settingsViews.append(setupLabel)
 
-        let statusCard = makeGroupCard(frame: NSRect(x: margin, y: 264, width: contentWidth, height: 68))
+        let statusCard = makeGroupCard(frame: NSRect(x: margin, y: 292, width: contentWidth, height: 68))
         content.addSubview(statusCard)
         settingsViews.append(statusCard)
 
@@ -1275,7 +1275,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         statusCard.addSubview(settingsFixButton)
         settingsStatusButton = settingsFixButton
 
-        let dictationCard = makeGroupCard(frame: NSRect(x: margin, y: 180, width: contentWidth, height: 68))
+        let dictationCard = makeGroupCard(frame: NSRect(x: margin, y: 208, width: contentWidth, height: 68))
         content.addSubview(dictationCard)
         settingsViews.append(dictationCard)
 
@@ -1290,11 +1290,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         autoPasteSwitch = dictationSwitch
 
         let apiLabel = uiLabel("Speech API key", size: 12, weight: .medium, color: mutedTextColor)
-        apiLabel.frame = NSRect(x: margin, y: 136, width: 160, height: 18)
+        apiLabel.frame = NSRect(x: margin, y: 164, width: 160, height: 18)
         content.addSubview(apiLabel)
         settingsViews.append(apiLabel)
 
-        let input = VoiTextField(frame: NSRect(x: margin, y: 80, width: 292, height: 40))
+        let input = VoiTextField(frame: NSRect(x: margin, y: 108, width: 292, height: 40))
         let hasSavedKey = UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty == false
         input.placeholderString = hasSavedKey ? "Key saved. Paste a new key." : "Paste your speech API key"
         input.stringValue = ""
@@ -1305,7 +1305,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
         let saveButton = makeButton(
             title: "Save",
-            frame: NSRect(x: margin + 304, y: 80, width: 88, height: 40),
+            frame: NSRect(x: margin + 304, y: 108, width: 88, height: 40),
             action: #selector(saveCartesiaKeyFromWindow),
             accent: !hasSavedKey
         )
