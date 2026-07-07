@@ -1279,7 +1279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.addSubview(notesLabel)
         overviewViews.append(notesLabel)
 
-        let notesRect = NSRect(x: margin, y: 82, width: contentWidth, height: 292)
+        let notesRect = NSRect(x: margin, y: 62, width: contentWidth, height: 312)
         let scrollView = NSScrollView(frame: notesRect)
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
@@ -1293,14 +1293,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         composerTextView = nil
         overviewViews.append(scrollView)
 
-        let footerDivider = NSView(frame: NSRect(x: margin, y: 68, width: contentWidth, height: 1))
+        let footerDivider = NSView(frame: NSRect(x: margin, y: 48, width: contentWidth, height: 1))
         footerDivider.wantsLayer = true
         footerDivider.layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.07).cgColor
         content.addSubview(footerDivider)
         overviewViews.append(footerDivider)
 
         let shortcut = uiLabel("Hold fn/Globe to dictate", size: 12.5, weight: .regular, color: secondaryTextColor)
-        shortcut.frame = NSRect(x: margin, y: 26, width: contentWidth, height: 18)
+        shortcut.frame = NSRect(x: margin, y: 16, width: contentWidth, height: 18)
         shortcut.alignment = .left
         content.addSubview(shortcut)
         shortcutLabel = shortcut
