@@ -1764,8 +1764,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         row.layer?.borderWidth = 1
         row.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: emphasized ? 0.075 : 0.045).cgColor
         row.layer?.backgroundColor = rowBackground.cgColor
-        row.toolTip = "Click to copy"
-
         let click = NSClickGestureRecognizer(target: self, action: #selector(copyNoteFromRow(_:)))
         click.numberOfClicksRequired = 1
         row.addGestureRecognizer(click)
@@ -1808,8 +1806,8 @@ final class DashboardBackgroundView: NSView {
         ])
         base?.draw(in: bounds, angle: -90)
 
-        let glowCenter = NSPoint(x: bounds.width * 0.62, y: bounds.height * 0.9)
-        let glowRadius = bounds.width * 0.45
+        let glowCenter = NSPoint(x: bounds.width * 0.86, y: bounds.height * 0.98)
+        let glowRadius = bounds.width * 0.34
         let glow = NSGradient(colors: [
             voiAccent.withAlphaComponent(0.14),
             voiAccent.withAlphaComponent(0.0),
@@ -2045,6 +2043,7 @@ final class NoteRowView: NSView {
         self.normalBackgroundColor = normalBackgroundColor
         self.copiedBackgroundColor = copiedBackgroundColor
         super.init(frame: frameRect)
+        wantsLayer = true
     }
 
     required init?(coder: NSCoder) {
@@ -2074,10 +2073,12 @@ final class NoteRowView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
         copyHintLabel?.alphaValue = 1
     }
 
     override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
         copyHintLabel?.alphaValue = 0
     }
 
