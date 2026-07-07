@@ -1273,8 +1273,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         tabGroup.addSubview(settingsTab)
         settingsTabButton = settingsTab
 
+        let sectionTitleY: CGFloat = 390
         let notesLabel = uiLabel("Past inputs", size: 12, weight: .medium, color: mutedTextColor)
-        notesLabel.frame = NSRect(x: margin, y: 390, width: 160, height: 18)
+        notesLabel.frame = NSRect(x: margin, y: sectionTitleY, width: 160, height: 18)
         content.addSubview(notesLabel)
         overviewViews.append(notesLabel)
 
@@ -1306,7 +1307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         overviewViews.append(shortcut)
 
         let setupLabel = uiLabel("Setup", size: 12, weight: .medium, color: mutedTextColor)
-        setupLabel.frame = NSRect(x: margin, y: 372, width: 160, height: 18)
+        setupLabel.frame = NSRect(x: margin, y: sectionTitleY, width: 160, height: 18)
         content.addSubview(setupLabel)
         permissionLabel = setupLabel
         settingsViews.append(setupLabel)
