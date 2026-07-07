@@ -12,6 +12,7 @@ private let cartesiaModel = "ink-whisper"
 private let cartesiaLanguage = "en"
 private let cartesiaKeyDefaultsKey = "voi.cartesiaKey"
 private let recordedNotesDefaultsKey = "voi.recordedNotes"
+private let autoPasteEnabledDefaultsKey = "voi.autoPasteEnabled"
 
 // Shared semantic color palette — single source of truth for the accent and
 // status colors, previously re-typed as raw literals throughout the file.
@@ -21,6 +22,7 @@ private let voiDanger = NSColor(calibratedRed: 0.93, green: 0.42, blue: 0.44, al
 
 private enum PasteResult {
     case pasted
+    case copiedAutoPasteOff
     case copiedNeedsAccessibility
     case copiedNoTarget
 }
@@ -304,6 +306,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         )
     }
 
+    private func styleSelectedPillButton(_ button: NSButton) {
+        button.setButtonType(.momentaryPushIn)
+        button.sendAction(on: [.leftMouseUp])
+        button.refusesFirstResponder = true
+        button.isBordered = false
+        button.bezelStyle = .regularSquare
+        button.alignment = .center
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 13
+        button.layer?.borderWidth = 1
+        button.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: 0.70).cgColor
+        button.layer?.backgroundColor = NSColor(calibratedWhite: 0.96, alpha: 1).cgColor
+        button.attributedTitle = NSAttributedString(
+            string: button.title,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1),
+            ]
+        )
+    }
+
     private func makeButton(title: String, frame: NSRect, action: Selector, accent: Bool = false) -> NSButton {
         let button = VoiButton(frame: frame)
         button.title = title
@@ -432,6 +455,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         toggle.action = action
         toggle.controlSize = .regular
         return toggle
+    }
+
+    private var isAutoPasteEnabled: Bool {
+        get {
+            UserDefaults.standard.object(forKey: autoPasteEnabledDefaultsKey) as? Bool ?? true
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: autoPasteEnabledDefaultsKey)
+        }
     }
 
     private func makeChip(frame: NSRect) -> NSTextField {
@@ -938,6 +970,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
                     case .pasted:
                         setStatus("Pasted")
                         shortcutLabel?.stringValue = "Pasted. Hold fn/Globe for another note."
+                    case .copiedAutoPasteOff:
+                        setStatus("Copied")
+                        shortcutLabel?.stringValue = "Copied to clipboard. Auto-Paste is off."
                     case .copiedNeedsAccessibility:
                         setStatus("Copied")
                         shortcutLabel?.stringValue = "Copied to clipboard. Auto-Paste is blocked by macOS Accessibility."
@@ -1007,6 +1042,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private func paste(_ text: String) -> PasteResult {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+
+        guard isAutoPasteEnabled else {
+            writeLog("paste copiedOnly reason=autoPasteOff chars=\(text.count)")
+            return .copiedAutoPasteOff
+        }
 
         guard let targetApplication,
               targetApplication.bundleIdentifier != Bundle.main.bundleIdentifier else {
@@ -1083,6 +1123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 
     @objc private func enableAutoPaste() {
+        isAutoPasteEnabled = true
         let granted = AXIsProcessTrusted()
         writeLog("autoPaste check ax=\(granted)")
         refreshPermissionStatus(eventTapActive: eventTap != nil)
@@ -1097,13 +1138,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 
     @objc private func toggleAutoPasteSwitch() {
-        if AXIsProcessTrusted() {
-            autoPasteSwitch?.state = .on
-            setStatus("Auto-Paste enabled")
-            shortcutLabel?.stringValue = "Auto-Paste is enabled."
+        let enabled = autoPasteSwitch?.state == .on
+        isAutoPasteEnabled = enabled
+        if enabled {
+            if AXIsProcessTrusted() {
+                setStatus("Auto-Paste enabled")
+                shortcutLabel?.stringValue = "Auto-Paste is enabled."
+            } else {
+                setStatus("Auto-Paste blocked")
+                shortcutLabel?.stringValue = "Allow Accessibility to use Auto-Paste."
+                openAccessibilitySettings()
+            }
         } else {
             autoPasteSwitch?.state = .off
-            enableAutoPaste()
+            setStatus("Auto-Paste off")
+            shortcutLabel?.stringValue = "Auto-Paste is off. Dictation will copy to clipboard."
         }
         refreshPermissionStatus(eventTapActive: eventTap != nil)
     }
@@ -1294,7 +1343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         let dictationCopy = uiLabel("Send text to the app you were using.", size: 12, weight: .regular, color: mutedTextColor)
         dictationCopy.frame = NSRect(x: 16, y: 14, width: 252, height: 18)
         dictationCard.addSubview(dictationCopy)
-        let dictationSwitch = makeSwitch(frame: NSRect(x: contentWidth - 56, y: 23, width: 38, height: 22), action: #selector(toggleAutoPasteSwitch))
+        let dictationSwitch = makeSwitch(frame: NSRect(x: contentWidth - 70, y: 20, width: 54, height: 28), action: #selector(toggleAutoPasteSwitch))
         dictationCard.addSubview(dictationSwitch)
         autoPasteSwitch = dictationSwitch
 
@@ -1319,6 +1368,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             accent: !hasSavedKey
         )
         saveButton.keyEquivalent = "\r"
+        styleSelectedPillButton(saveButton)
         content.addSubview(saveButton)
         settingsViews.append(saveButton)
 
@@ -1450,6 +1500,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         }
 
         let isAccessible = AXIsProcessTrusted()
+        let autoPasteEnabled = isAutoPasteEnabled
         let hasKey = UserDefaults.standard.string(forKey: cartesiaKeyDefaultsKey)?.isEmpty == false
         updateStatusValue(micChip, title: micStatus, color: micColor)
         updateStatusValue(
@@ -1462,8 +1513,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             title: hasKey ? "Saved" : "Missing",
             color: hasKey ? voiSuccess : voiDanger
         )
-        autoPasteSwitch?.state = isAccessible ? .on : .off
-        updateSettingsStatus(mic: mic, hasKey: hasKey, isAccessible: isAccessible, eventTapActive: eventTapActive)
+        autoPasteSwitch?.state = autoPasteEnabled ? .on : .off
+        updateSettingsStatus(mic: mic, hasKey: hasKey, isAccessible: isAccessible, autoPasteEnabled: autoPasteEnabled, eventTapActive: eventTapActive)
         if !showingSettingsTab {
             shortcutLabel?.stringValue = eventTapActive || hasRegisteredHotKey
                 ? "Hold fn/Globe to dictate"
@@ -1471,7 +1522,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         }
     }
 
-    private func updateSettingsStatus(mic: AVAuthorizationStatus, hasKey: Bool, isAccessible: Bool, eventTapActive: Bool) {
+    private func updateSettingsStatus(mic: AVAuthorizationStatus, hasKey: Bool, isAccessible: Bool, autoPasteEnabled: Bool, eventTapActive: Bool) {
         let title: String
         let detail: String
         let buttonTitle: String?
@@ -1487,7 +1538,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         } else {
             switch mic {
             case .authorized:
-                if !isAccessible {
+                if !autoPasteEnabled {
+                    title = "Auto-Paste is off"
+                    detail = "Dictation will copy text to the clipboard."
+                    buttonTitle = "Enable"
+                    buttonTag = 3
+                    titleColor = secondaryTextColor
+                } else if !isAccessible {
                     title = "Auto-Paste is off"
                     detail = "Allow Accessibility to paste into other apps."
                     buttonTitle = "Enable"
@@ -1659,6 +1716,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         case .pasted:
             setStatus("Pasted")
             shortcutLabel?.stringValue = "Test pasted into the active app."
+        case .copiedAutoPasteOff:
+            setStatus("Copied")
+            shortcutLabel?.stringValue = "Test copied. Auto-Paste is off."
         case .copiedNeedsAccessibility:
             setStatus("Copied")
             shortcutLabel?.stringValue = "Test copied. Auto-Paste is blocked by macOS Accessibility."
