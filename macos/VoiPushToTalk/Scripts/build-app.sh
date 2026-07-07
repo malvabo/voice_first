@@ -10,6 +10,25 @@ ICONSET="$ICON_WORK/Voi.iconset"
 ICON_PNG="$ICON_WORK/voi-icon.png"
 ICON_ICNS="$ICON_WORK/Voi.icns"
 
+require_tool() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "error: missing required tool '$1'" >&2
+    echo "       Install/use the macOS developer tools, then rerun this script." >&2
+    exit 1
+  fi
+}
+
+require_tool swift
+require_tool qlmanage
+require_tool sips
+require_tool iconutil
+require_tool codesign
+
+if [[ ! -f "$ICON_SRC" ]]; then
+  echo "error: missing app icon source at $ICON_SRC" >&2
+  exit 1
+fi
+
 cd "$ROOT"
 swift build -c release
 
@@ -27,53 +46,99 @@ if [[ -z "$GENERATED_ICON" ]]; then
 fi
 mv "$GENERATED_ICON" "$ICON_PNG"
 
-python3 - "$ICON_PNG" <<'PY'
-from collections import deque
-import sys
-from PIL import Image
+swift - "$ICON_PNG" <<'SWIFT'
+import AppKit
+import Foundation
 
-path = sys.argv[1]
-image = Image.open(path).convert("RGBA")
-pixels = image.load()
-width, height = image.size
-seen = bytearray(width * height)
-queue = deque()
+let url = URL(fileURLWithPath: CommandLine.arguments[1])
+guard let source = NSImage(contentsOf: url),
+      let sourceRep = source.representations.first else {
+  fputs("error: failed to load rasterized app icon\n", stderr)
+  exit(1)
+}
 
-def is_backing(pixel):
-    r, g, b, a = pixel
-    if a == 0:
-        return False
-    neutral = max(r, g, b) - min(r, g, b) <= 4
-    bright_enough = min(r, g, b) >= 48
-    return neutral and bright_enough
+let width = sourceRep.pixelsWide
+let height = sourceRep.pixelsHigh
+guard let bitmap = NSBitmapImageRep(
+  bitmapDataPlanes: nil,
+  pixelsWide: width,
+  pixelsHigh: height,
+  bitsPerSample: 8,
+  samplesPerPixel: 4,
+  hasAlpha: true,
+  isPlanar: false,
+  colorSpaceName: .deviceRGB,
+  bytesPerRow: width * 4,
+  bitsPerPixel: 32
+), let data = bitmap.bitmapData else {
+  fputs("error: failed to create app icon bitmap\n", stderr)
+  exit(1)
+}
 
-for x in range(width):
-    queue.append((x, 0))
-    queue.append((x, height - 1))
-for y in range(1, height - 1):
+NSGraphicsContext.saveGraphicsState()
+NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+source.draw(in: NSRect(x: 0, y: 0, width: width, height: height))
+NSGraphicsContext.restoreGraphicsState()
+
+var visited = Array(repeating: false, count: width * height)
+var queue: [(Int, Int)] = []
+
+func index(_ x: Int, _ y: Int) -> Int { y * width + x }
+
+func byteOffset(_ x: Int, _ y: Int) -> Int { y * bitmap.bytesPerRow + x * 4 }
+
+func isBacking(_ x: Int, _ y: Int) -> Bool {
+  let offset = byteOffset(x, y)
+  let r = Double(data[offset]) / 255.0
+  let g = Double(data[offset + 1]) / 255.0
+  let b = Double(data[offset + 2]) / 255.0
+  let a = Double(data[offset + 3]) / 255.0
+  let neutral = max(r, g, b) - min(r, g, b) <= 0.08
+  let bright = min(r, g, b) >= 0.72
+  return a > 0.01 && neutral && bright
+}
+
+func clearPixel(_ x: Int, _ y: Int) {
+  let offset = byteOffset(x, y)
+  data[offset] = 255
+  data[offset + 1] = 255
+  data[offset + 2] = 255
+  data[offset + 3] = 0
+}
+
+for x in 0..<width {
+  queue.append((x, 0))
+  queue.append((x, height - 1))
+}
+if height > 2 {
+  for y in 1..<(height - 1) {
     queue.append((0, y))
     queue.append((width - 1, y))
+  }
+}
 
-while queue:
-    x, y = queue.popleft()
-    index = y * width + x
-    if seen[index]:
-        continue
-    seen[index] = 1
-    if not is_backing(pixels[x, y]):
-        continue
-    pixels[x, y] = (255, 255, 255, 0)
-    if x > 0:
-        queue.append((x - 1, y))
-    if x + 1 < width:
-        queue.append((x + 1, y))
-    if y > 0:
-        queue.append((x, y - 1))
-    if y + 1 < height:
-        queue.append((x, y + 1))
+var cursor = 0
+while cursor < queue.count {
+  let (x, y) = queue[cursor]
+  cursor += 1
+  guard x >= 0, x < width, y >= 0, y < height else { continue }
+  let i = index(x, y)
+  if visited[i] { continue }
+  visited[i] = true
+  guard isBacking(x, y) else { continue }
+  clearPixel(x, y)
+  queue.append((x - 1, y))
+  queue.append((x + 1, y))
+  queue.append((x, y - 1))
+  queue.append((x, y + 1))
+}
 
-image.save(path)
-PY
+guard let png = bitmap.representation(using: .png, properties: [:]) else {
+  fputs("error: failed to encode cleaned app icon\n", stderr)
+  exit(1)
+}
+try png.write(to: url)
+SWIFT
 
 sips -z 16 16     "$ICON_PNG" --out "$ICONSET/icon_16x16.png" >/dev/null
 sips -z 32 32     "$ICON_PNG" --out "$ICONSET/icon_16x16@2x.png" >/dev/null
@@ -90,6 +155,9 @@ iconutil -c icns "$ICONSET" -o "$ICON_ICNS"
 
 cp "$BIN" "$APP/Contents/MacOS/Voi"
 cp "$ROOT/Resources/PersonInDarkRoom.jpg" "$APP/Contents/Resources/PersonInDarkRoom.jpg"
+if [[ -d "$ROOT/Resources/Fonts" ]]; then
+  cp -R "$ROOT/Resources/Fonts" "$APP/Contents/Resources/Fonts"
+fi
 cp "$ICON_ICNS" "$APP/Contents/Resources/Voi.icns"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
