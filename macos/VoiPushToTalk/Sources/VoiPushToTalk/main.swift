@@ -1180,11 +1180,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         settingsTabButton = settingsTab
 
         let notesLabel = uiLabel("Past inputs", size: 12, weight: .medium, color: mutedTextColor)
-        notesLabel.frame = NSRect(x: margin, y: 374, width: 160, height: 18)
+        notesLabel.frame = NSRect(x: margin, y: 390, width: 160, height: 18)
         content.addSubview(notesLabel)
         overviewViews.append(notesLabel)
 
-        let notesRect = NSRect(x: margin, y: 82, width: contentWidth, height: 276)
+        let notesRect = NSRect(x: margin, y: 82, width: contentWidth, height: 292)
         let scrollView = NSScrollView(frame: notesRect)
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
