@@ -3,6 +3,7 @@ import AVFoundation
 import ApplicationServices
 import Carbon
 import CoreImage
+import CoreText
 import Foundation
 
 private let cartesiaURL = URL(string: "https://api.cartesia.ai/stt")!
@@ -130,6 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        registerBundledFonts()
         if let iconURL = Bundle.main.url(forResource: "Voi", withExtension: "icns"),
            let iconImage = NSImage(contentsOf: iconURL) {
             NSApp.applicationIconImage = iconImage
@@ -200,6 +202,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         NSApp.mainMenu = mainMenu
     }
 
+    private func registerBundledFonts() {
+        guard let fontURLs = Bundle.main.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") else {
+            return
+        }
+
+        for url in fontURLs {
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+    }
+
+    private func voiFont(ofSize size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        let descriptor = NSFontDescriptor(fontAttributes: [
+            .family: "Lora",
+            .traits: [
+                NSFontDescriptor.TraitKey.weight: loraTraitWeight(for: weight),
+            ],
+        ])
+        return NSFont(descriptor: descriptor, size: size)
+            ?? NSFont(name: "Lora", size: size)
+            ?? .systemFont(ofSize: size, weight: weight)
+    }
+
+    private func loraTraitWeight(for weight: NSFont.Weight) -> CGFloat {
+        if weight >= .bold {
+            return 0.40
+        }
+        if weight >= .semibold {
+            return 0.30
+        }
+        if weight >= .medium {
+            return 0.18
+        }
+        return 0
+    }
+
     private func monoLabel(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: NSColor? = nil) -> NSTextField {
         let label = NSTextField(labelWithString: text)
         label.font = .monospacedSystemFont(ofSize: size, weight: weight)
@@ -211,7 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
     private func uiLabel(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: NSColor? = nil) -> NSTextField {
         let label = NSTextField(labelWithString: text)
-        label.font = .systemFont(ofSize: size, weight: weight)
+        label.font = voiFont(ofSize: size, weight: weight)
         label.textColor = color ?? primaryTextColor
         label.backgroundColor = .clear
         label.drawsBackground = false
@@ -236,7 +273,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         button.attributedTitle = NSAttributedString(
             string: button.title,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: accent ? .semibold : .medium),
+                .font: voiFont(ofSize: 13, weight: accent ? .semibold : .medium),
                 .foregroundColor: accent ? accentInkColor : secondaryTextColor,
                 .paragraphStyle: paragraph,
             ]
@@ -260,7 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         button.attributedTitle = NSAttributedString(
             string: button.title,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                .font: voiFont(ofSize: 12, weight: .semibold),
                 .foregroundColor: active ? primaryTextColor : secondaryTextColor,
             ]
         )
@@ -276,7 +313,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 
     private func styleTextField(_ input: NSTextField) {
-        input.font = .systemFont(ofSize: 14, weight: .regular)
+        input.font = voiFont(ofSize: 14, weight: .regular)
         input.textColor = primaryTextColor
         setPlaceholder(input.placeholderString ?? "", for: input)
         input.backgroundColor = NSColor(calibratedWhite: 0.02, alpha: 0.24)
@@ -297,7 +334,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         input?.placeholderAttributedString = NSAttributedString(
             string: text,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 14, weight: .regular),
+                .font: voiFont(ofSize: 14, weight: .regular),
                 .foregroundColor: mutedTextColor,
             ]
         )
@@ -321,7 +358,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         textView.textColor = mono ? secondaryTextColor : primaryTextColor
         textView.font = mono
             ? .monospacedSystemFont(ofSize: 11, weight: .regular)
-            : .systemFont(ofSize: 13.5, weight: .regular)
+            : voiFont(ofSize: 13.5, weight: .regular)
         textView.textContainerInset = NSSize(width: 16, height: 14)
     }
 
@@ -336,7 +373,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         textView.drawsBackground = false
         textView.backgroundColor = .clear
         textView.textColor = secondaryTextColor
-        textView.font = .systemFont(ofSize: 14.5, weight: .regular)
+        textView.font = voiFont(ofSize: 14.5, weight: .regular)
         textView.textContainerInset = NSSize(width: 0, height: 0)
     }
 
@@ -369,7 +406,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         let attributed = NSMutableAttributedString(
             string: "● ",
             attributes: [
-                .font: NSFont.systemFont(ofSize: 8, weight: .bold),
+                .font: voiFont(ofSize: 8, weight: .bold),
                 .foregroundColor: color,
                 .baselineOffset: 1.5,
             ]
@@ -377,7 +414,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         attributed.append(NSAttributedString(
             string: title,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .font: voiFont(ofSize: 13, weight: .medium),
                 .foregroundColor: color,
             ]
         ))
@@ -408,7 +445,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         let attributed = NSMutableAttributedString(
             string: "● ",
             attributes: [
-                .font: NSFont.systemFont(ofSize: 8, weight: .bold),
+                .font: voiFont(ofSize: 8, weight: .bold),
                 .foregroundColor: state.dotColor,
                 .baselineOffset: 1.5,
             ]
@@ -416,7 +453,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         attributed.append(NSAttributedString(
             string: title,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 11.5, weight: .medium),
+                .font: voiFont(ofSize: 11.5, weight: .medium),
                 .foregroundColor: state.textColor,
             ]
         ))
@@ -1002,7 +1039,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             let attributed = NSMutableAttributedString(
                 string: "● ",
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 10, weight: .bold),
+                    .font: voiFont(ofSize: 10, weight: .bold),
                     .foregroundColor: voiSuccess,
                     .baselineOffset: 1.0,
                     .paragraphStyle: paragraph,
@@ -1011,7 +1048,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             attributed.append(NSAttributedString(
                 string: "Ready",
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                    .font: voiFont(ofSize: 13, weight: .medium),
                     .foregroundColor: secondaryTextColor,
                     .paragraphStyle: paragraph,
                 ]
@@ -1021,7 +1058,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             statusLabel?.attributedStringValue = NSAttributedString(
                 string: message,
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 12.5, weight: .medium),
+                    .font: voiFont(ofSize: 12.5, weight: .medium),
                     .foregroundColor: primaryTextColor,
                     .paragraphStyle: paragraph,
                 ]
@@ -1345,7 +1382,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             statusLabel?.attributedStringValue = NSAttributedString(
                 string: "Not ready",
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 12.5, weight: .medium),
+                    .font: voiFont(ofSize: 12.5, weight: .medium),
                     .foregroundColor: secondaryTextColor,
                 ]
             )
@@ -1689,7 +1726,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private func makeNoteRow(stamp: String, text: String, width: CGFloat, emphasized: Bool) -> NSView {
         let padding: CGFloat = 14
         let timestampHeight: CGFloat = 14
-        let textFont = NSFont.systemFont(ofSize: 14, weight: emphasized ? .medium : .regular)
+        let textFont = voiFont(ofSize: 14, weight: emphasized ? .medium : .regular)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 2
         let contentWidth = width - padding * 2

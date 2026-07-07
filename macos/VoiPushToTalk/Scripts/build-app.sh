@@ -155,6 +155,9 @@ iconutil -c icns "$ICONSET" -o "$ICON_ICNS"
 
 cp "$BIN" "$APP/Contents/MacOS/Voi"
 cp "$ROOT/Resources/PersonInDarkRoom.jpg" "$APP/Contents/Resources/PersonInDarkRoom.jpg"
+if [[ -d "$ROOT/Resources/Fonts" ]]; then
+  cp -R "$ROOT/Resources/Fonts" "$APP/Contents/Resources/Fonts"
+fi
 cp "$ICON_ICNS" "$APP/Contents/Resources/Voi.icns"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
