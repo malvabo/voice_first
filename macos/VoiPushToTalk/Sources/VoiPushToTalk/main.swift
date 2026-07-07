@@ -1196,7 +1196,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         brand.frame = NSRect(x: margin + 34, y: 426, width: 80, height: 28)
         content.addSubview(brand)
 
-        let tabWidth: CGFloat = 224
+        let tabWidth: CGFloat = 168
+        let tabInset: CGFloat = 3
+        let tabGap: CGFloat = 4
+        let tabButtonWidth = (tabWidth - tabInset * 2 - tabGap) / 2
         let tabGroup = NSView(frame: NSRect(x: windowSize.width - margin - tabWidth, y: 426, width: tabWidth, height: 30))
         tabGroup.wantsLayer = true
         tabGroup.layer?.cornerRadius = 9
@@ -1205,14 +1208,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         tabGroup.layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.05).cgColor
         content.addSubview(tabGroup)
 
-        let overviewTab = VoiButton(frame: NSRect(x: 3, y: 3, width: (tabWidth - 9) / 2, height: 24))
+        let overviewTab = VoiButton(frame: NSRect(x: tabInset, y: 3, width: tabButtonWidth, height: 24))
         overviewTab.title = "Inputs"
         overviewTab.target = self
         overviewTab.action = #selector(showOverviewTab)
         tabGroup.addSubview(overviewTab)
         overviewTabButton = overviewTab
 
-        let settingsTab = VoiButton(frame: NSRect(x: 6 + (tabWidth - 9) / 2, y: 3, width: (tabWidth - 9) / 2, height: 24))
+        let settingsTab = VoiButton(frame: NSRect(x: tabInset + tabButtonWidth + tabGap, y: 3, width: tabButtonWidth, height: 24))
         settingsTab.title = "Settings"
         settingsTab.target = self
         settingsTab.action = #selector(showSettingsTab)
