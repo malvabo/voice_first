@@ -1099,6 +1099,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
 
         UserDefaults.standard.set(clipboardText, forKey: cartesiaKeyDefaultsKey)
         setStatus("API key saved")
+        keyField?.stringValue = ""
+        setPlaceholder("Key saved. Paste a new key.", for: keyField)
+        shortcutLabel?.stringValue = "Key saved. Hold fn/Globe to dictate."
+        updateSetupCopy()
+        refreshPermissionStatus(eventTapActive: eventTap != nil)
     }
 
     private func showSetupWindow(activate: Bool = true) {
