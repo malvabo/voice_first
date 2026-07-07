@@ -46,6 +46,100 @@ if [[ -z "$GENERATED_ICON" ]]; then
 fi
 mv "$GENERATED_ICON" "$ICON_PNG"
 
+swift - "$ICON_PNG" <<'SWIFT'
+import AppKit
+import Foundation
+
+let url = URL(fileURLWithPath: CommandLine.arguments[1])
+guard let source = NSImage(contentsOf: url),
+      let sourceRep = source.representations.first else {
+  fputs("error: failed to load rasterized app icon\n", stderr)
+  exit(1)
+}
+
+let width = sourceRep.pixelsWide
+let height = sourceRep.pixelsHigh
+guard let bitmap = NSBitmapImageRep(
+  bitmapDataPlanes: nil,
+  pixelsWide: width,
+  pixelsHigh: height,
+  bitsPerSample: 8,
+  samplesPerPixel: 4,
+  hasAlpha: true,
+  isPlanar: false,
+  colorSpaceName: .deviceRGB,
+  bytesPerRow: width * 4,
+  bitsPerPixel: 32
+), let data = bitmap.bitmapData else {
+  fputs("error: failed to create app icon bitmap\n", stderr)
+  exit(1)
+}
+
+NSGraphicsContext.saveGraphicsState()
+NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+source.draw(in: NSRect(x: 0, y: 0, width: width, height: height))
+NSGraphicsContext.restoreGraphicsState()
+
+var visited = Array(repeating: false, count: width * height)
+var queue: [(Int, Int)] = []
+
+func index(_ x: Int, _ y: Int) -> Int { y * width + x }
+
+func byteOffset(_ x: Int, _ y: Int) -> Int { y * bitmap.bytesPerRow + x * 4 }
+
+func isBacking(_ x: Int, _ y: Int) -> Bool {
+  let offset = byteOffset(x, y)
+  let r = Double(data[offset]) / 255.0
+  let g = Double(data[offset + 1]) / 255.0
+  let b = Double(data[offset + 2]) / 255.0
+  let a = Double(data[offset + 3]) / 255.0
+  let neutral = max(r, g, b) - min(r, g, b) <= 0.08
+  let bright = min(r, g, b) >= 0.72
+  return a > 0.01 && neutral && bright
+}
+
+func clearPixel(_ x: Int, _ y: Int) {
+  let offset = byteOffset(x, y)
+  data[offset] = 255
+  data[offset + 1] = 255
+  data[offset + 2] = 255
+  data[offset + 3] = 0
+}
+
+for x in 0..<width {
+  queue.append((x, 0))
+  queue.append((x, height - 1))
+}
+if height > 2 {
+  for y in 1..<(height - 1) {
+    queue.append((0, y))
+    queue.append((width - 1, y))
+  }
+}
+
+var cursor = 0
+while cursor < queue.count {
+  let (x, y) = queue[cursor]
+  cursor += 1
+  guard x >= 0, x < width, y >= 0, y < height else { continue }
+  let i = index(x, y)
+  if visited[i] { continue }
+  visited[i] = true
+  guard isBacking(x, y) else { continue }
+  clearPixel(x, y)
+  queue.append((x - 1, y))
+  queue.append((x + 1, y))
+  queue.append((x, y - 1))
+  queue.append((x, y + 1))
+}
+
+guard let png = bitmap.representation(using: .png, properties: [:]) else {
+  fputs("error: failed to encode cleaned app icon\n", stderr)
+  exit(1)
+}
+try png.write(to: url)
+SWIFT
+
 sips -z 16 16     "$ICON_PNG" --out "$ICONSET/icon_16x16.png" >/dev/null
 sips -z 32 32     "$ICON_PNG" --out "$ICONSET/icon_16x16@2x.png" >/dev/null
 sips -z 32 32     "$ICON_PNG" --out "$ICONSET/icon_32x32.png" >/dev/null
