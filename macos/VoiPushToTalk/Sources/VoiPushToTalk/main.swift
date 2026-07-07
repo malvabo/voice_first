@@ -101,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private var subtitleLabel: NSTextField?
     private var notesTextView: NSTextView?
     private var notesScrollView: NSScrollView?
+    private var copyLatestButton: NSButton?
     private var composerTextView: NSTextView?
     private var permissionLabel: NSTextField?
     private var settingsStatusTitleLabel: NSTextField?
@@ -221,12 +222,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     private func styleButton(_ button: NSButton, accent: Bool = false) {
         button.setButtonType(.momentaryPushIn)
         button.sendAction(on: [.leftMouseUp])
-        button.isEnabled = true
         button.refusesFirstResponder = true
         button.isBordered = false
         button.bezelStyle = .regularSquare
         button.alignment = .center
         button.wantsLayer = true
+        button.layer?.opacity = button.isEnabled ? 1 : 0.48
         button.layer?.cornerRadius = 10
         button.layer?.borderWidth = 1
         button.layer?.borderColor = (accent ? accentColor.withAlphaComponent(0.32) : NSColor(calibratedWhite: 1, alpha: 0.10)).cgColor
@@ -1188,7 +1189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         content.addSubview(notesLabel)
         overviewViews.append(notesLabel)
 
-        let notesRect = NSRect(x: margin, y: 96, width: contentWidth, height: 236)
+        let notesRect = NSRect(x: margin, y: 118, width: contentWidth, height: 214)
         let scrollView = NSScrollView(frame: notesRect)
         let textView = NSTextView(frame: scrollView.bounds)
         stylePlainScrollView(scrollView, textView: textView)
@@ -1201,6 +1202,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
         composerTextView = nil
         overviewViews.append(scrollView)
 
+        let footerDivider = NSView(frame: NSRect(x: margin, y: 96, width: contentWidth, height: 1))
+        footerDivider.wantsLayer = true
+        footerDivider.layer?.backgroundColor = NSColor(calibratedWhite: 1, alpha: 0.07).cgColor
+        content.addSubview(footerDivider)
+        overviewViews.append(footerDivider)
+
         let copyButton = makeButton(
             title: "Copy Latest",
             frame: NSRect(x: margin, y: 40, width: 120, height: 40),
@@ -1208,6 +1215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
             accent: true
         )
         content.addSubview(copyButton)
+        copyLatestButton = copyButton
         overviewViews.append(copyButton)
 
         let shortcut = uiLabel("Ready across your Mac", size: 12.5, weight: .regular, color: secondaryTextColor)
@@ -1642,6 +1650,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVAudioRecorderDelegat
     }
 
     private func refreshNotesView() {
+        copyLatestButton?.isEnabled = !notes.isEmpty
+        if let copyLatestButton {
+            styleButton(copyLatestButton, accent: !notes.isEmpty)
+        }
         composerTextView?.string = notes.first?.text
             ?? "Nothing dictated yet."
         composerTextView?.textColor = notes.first == nil ? mutedTextColor : primaryTextColor
